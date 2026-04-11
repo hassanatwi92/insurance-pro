@@ -248,9 +248,49 @@ export default function Login({ onLogin }: LoginProps) {
               : mode === "login"
               ? "🔓 دخول"
               : "✅ إنشاء الحساب"}
+              
           </button>
+        
+<div
+            style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: "1px solid rgba(255,255,255,0.2)",
+              textAlign: "center",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.7)",
+              lineHeight: 1.8,
+            }}
+          >
+            © 2026 All Rights Reserved
+            <br />
+            Designed & Developed by{" "}
+            <span style={{ fontWeight: "bold", color: "white" }}>
+              Hassan Atwi
+            </span>
+            <br />
+            <span style={{ fontSize: 10 }}>
+              Web Developer |{" "}
+              <a
+                href="tel:+96176059770"
+                style={{
+                  color: "white",
+                  textDecoration: "none",
+                  fontWeight: "bold",
+                }}
+              >
+                +961 76 059770
+              </a>
+            </span>
+          </div>
+        
         </form>
+
+      
       </div>
+
+
+
 
       <style>{`
         @keyframes shake {
