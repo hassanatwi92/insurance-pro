@@ -705,8 +705,16 @@ if (ins.method !== "ملغى") {
 </div>
 
 
-              <table style={{ width: "100%", marginTop: 10, background: "white", borderRadius: 15, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", borderCollapse: "collapse" }}>
-               <thead>
+<table style={{
+  minWidth: "1200px",  // 👈 أهم شي
+  width: "100%",
+  marginTop: 10,
+  background: "white",
+  borderRadius: 15,
+  overflow: "hidden",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+  borderCollapse: "collapse"
+}}>               <thead>
   <tr>
     {[
 "رقم البوليصة",
@@ -845,7 +853,7 @@ if (ins.method !== "ملغى") {
         background: "#FFC107",
         border: "none",
         borderRadius: 6,
-        padding: "3px 6px",
+        padding: "6px 10px",
         cursor: "pointer",
         fontSize: "0.75em"
       }}
@@ -864,7 +872,12 @@ if (ins.method !== "ملغى") {
   const updated = policies.map(pol => {
     if (pol.id !== p.id || !pol.installments) return pol;
 
-    const newInstallments = pol.installments.filter(i => i.index !== ins.index);
+    const newInstallments = pol.installments
+  .filter(i => i.index !== ins.index)
+  .map((i, idx) => ({
+    ...i,
+    index: idx + 1
+  }));
 
     // ✅ إذا بعد في أقساط
     if (newInstallments.length > 0) {
@@ -1526,9 +1539,18 @@ if (ins.method !== "ملغى") {
 <input
   type="date"
   value={ins.payment_date || ""}
-  onChange={(e) =>
-    updateInstallmentField(editModal.id, ins.index, "payment_date", e.target.value)
-  }
+ onChange={(e) => {
+  const updated = [...(editModal.installments || [])];
+  updated[i] = {
+    ...updated[i],
+    payment_date: e.target.value
+  };
+
+  setEditModal({
+    ...editModal,
+    installments: updated
+  });
+}}
 />
 
 
@@ -1546,11 +1568,18 @@ if (ins.method !== "ملغى") {
           <input
             type="text"
             value={ins.method || ""}
-            onChange={(e) => {
-              const updated = [...editModal.installments];
-              updated[i].method = e.target.value;
-              setEditModal({ ...editModal, installments: updated });
-            }}
+           onChange={(e) => {
+  const updated = [...(editModal.installments || [])];
+  updated[i] = {
+    ...updated[i],
+    payment_date: e.target.value
+  };
+
+  setEditModal({
+    ...editModal,
+    installments: updated
+  });
+}}
             placeholder="طريقة الدفع"
           />
 
@@ -1941,23 +1970,40 @@ if (ins.method !== "ملغى") {
         👔 إدارة الوسطاء
       </h2>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 18 }}>
-        <input
-          type="text"
-          value={newBrokerName}
-          onChange={(e) => setNewBrokerName(e.target.value)}
-          placeholder="اسم الوسيط..."
-          style={{ padding: 10 }}
-        />
-        <input
-          type="text"
-          value={newBrokerCode}
-          onChange={(e) => setNewBrokerCode(e.target.value)}
-          placeholder="الكود..."
-          style={{ padding: 10 }}
-        />
-        <button onClick={addBroker}>➕</button>
-      </div>
+      <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: window.innerWidth < 768 ? "1fr" : "1fr 1fr auto",
+    gap: 8,
+    marginBottom: 18
+  }}
+>
+  <input
+    type="text"
+    value={newBrokerName}
+    onChange={(e) => setNewBrokerName(e.target.value)}
+    placeholder="اسم الوسيط..."
+    style={{ padding: 8 }}
+  />
+
+  <input
+    type="text"
+    value={newBrokerCode}
+    onChange={(e) => setNewBrokerCode(e.target.value)}
+    placeholder="الكود..."
+    style={{ padding: 8 }}
+  />
+
+  <button
+    onClick={addBroker}
+    style={{
+      padding: 8,
+      width: "90%"
+    }}
+  >
+    ➕ إضافة
+  </button>
+</div>
 
       <div style={{ maxHeight: 400, overflowY: "auto" }}>
         {brokers.length === 0 ? (
@@ -1999,7 +2045,7 @@ if (ins.method !== "ملغى") {
 }
 
 const inputStyle: React.CSSProperties = { width: "100%", padding: "12px 15px", margin: "8px 0", border: "none", borderRadius: 12, fontSize: 14, background: "rgba(255,255,255,0.9)", boxShadow: "0 4px 15px rgba(0,0,0,0.1)", direction: "rtl", boxSizing: "border-box" };
-const tdStyle: React.CSSProperties = { padding: "10px 7px", borderBottom: "1px solid #eee", textAlign: "center", fontSize: "0.85em" };
+const tdStyle: React.CSSProperties = { padding: "10px 7px", borderBottom: "1px solid #eee", textAlign: "center", fontSize: window.innerWidth < 768 ? "0.7em" : "0.85em" };
 
 function Btn({ onClick, children, color }: { onClick: () => void; children: React.ReactNode; color: string }) {
   const [hovered, setHovered] = useState(false);
