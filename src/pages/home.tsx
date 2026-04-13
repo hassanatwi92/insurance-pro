@@ -1061,7 +1061,7 @@ if (ins.method !== "ملغى") {
 
         {displayed.length === 0 && !message && (
           <div style={{ color: "rgba(255,255,255,0.7)", textAlign: "center", marginTop: 30, fontSize: "1.1em" }}>
-            {isFiltered ? "🔍 لا توجد نتائج لهذا البحث" : "📭 لا توجد بوليصات بعد"}
+            {isFiltered ? "🔍 لا توجد نتائج لهذا البحث" : "📭 لا يوجد بوالص بعد"}
           </div>
         )}
       </div>
