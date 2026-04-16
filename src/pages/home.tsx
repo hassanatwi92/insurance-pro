@@ -1207,11 +1207,40 @@ const policiesUserId = userId;
           onClick={(e) => { if (e.target === e.currentTarget) setShowBrokerManager(false); }}>
           <div dir="rtl" style={{ background: "white", borderRadius: 20, padding: 28, width: "100%", maxWidth: 450 }}>
             <h2 style={{ textAlign: "center", marginBottom: 18 }}>👔 إدارة الوسطاء</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 18 }}>
-              <input type="text" value={newBrokerName} onChange={(e) => setNewBrokerName(e.target.value)} placeholder="اسم الوسيط..." style={{ padding: "10px 14px", border: "2px solid #e0e0e0", borderRadius: 10, fontSize: 14, direction: "rtl", outline: "none", fontFamily: "inherit" }} />
-              <input type="text" value={newBrokerCode} onChange={(e) => setNewBrokerCode(e.target.value)} placeholder="الكود..." style={{ padding: "10px 14px", border: "2px solid #e0e0e0", borderRadius: 10, fontSize: 14, direction: "rtl", outline: "none", fontFamily: "inherit" }} />
-              <button onClick={addBroker} style={{ padding: "10px 14px", background: "linear-gradient(45deg,#FB8C00,#EF6C00)", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: "bold", cursor: "pointer" }}>➕</button>
-            </div>
+            <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: window.innerWidth < 768 ? "1fr" : "1fr 1fr auto",
+    gap: 8,
+    marginBottom: 18
+  }}
+>
+  <input
+    type="text"
+    value={newBrokerName}
+    onChange={(e) => setNewBrokerName(e.target.value)}
+    placeholder="اسم الوسيط..."
+    style={{ padding: 8 }}
+  />
+
+  <input
+    type="text"
+    value={newBrokerCode}
+    onChange={(e) => setNewBrokerCode(e.target.value)}
+    placeholder="الكود..."
+    style={{ padding: 8 }}
+  />
+
+  <button
+    onClick={addBroker}
+    style={{
+      padding: 8,
+      width: "90%"
+    }}
+  >
+    ➕ إضافة
+  </button>
+</div>
             <div style={{ maxHeight: 400, overflowY: "auto" }}>
               {brokers.length === 0 ? (
                 <div style={{ textAlign: "center", color: "#bbb", padding: 20 }}>لا يوجد وسطاء بعد</div>
