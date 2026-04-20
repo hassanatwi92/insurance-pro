@@ -3,6 +3,10 @@ import type { Page } from "../types";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+
 interface Installment {
   index: number;
   due_date: string;
@@ -116,6 +120,37 @@ export default function Home({
     { date: "", method: "", receipt_num: "", amount: "" },
     { date: "", method: "", receipt_num: "", amount: "" },
   ]);
+
+const exportToExcel = (data: Policy[]) => {
+  const formatted = data.map((p) => ({
+    "Policy Number": p.policy_num,
+    "Client Name": p.client_name,
+    "Policy Type": p.policy_type,
+    "Company": p.insurance_company,
+    "Broker": p.broker_name || "-",
+    "Buy Price": p.buy_price,
+    "Sell Price": p.sell_price,
+    "Profit": p.profit,
+    "Paid Company": p.paid_company ? "Yes" : "No",
+    "Date": formatDateDMY(p.date),
+    "Payment Type": p.client_payment_type,
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(formatted);
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Policies");
+
+  const excelBuffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const file = new Blob([excelBuffer], { type: "application/octet-stream" });
+  saveAs(file, "policies.xlsx");
+};
+
+
   // =============================================
   // LOAD DATA FROM SUPABASE
   // =============================================
@@ -158,6 +193,8 @@ setPolicies(
         }
       }
       
+
+
       // 3. company list
       const { data: companiesData } = await supabase
         .from("user_settings")
@@ -667,18 +704,66 @@ const policiesUserId = userId;
         )}
         {displayed.length > 0 && (
           <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "15px 0 10px", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ color: "white", fontWeight: "bold", fontSize: "1em", opacity: 0.9 }}>
-                {isFiltered ? `🔍 النتائج: ${displayed.length} بوليصة — إجمالي الربح: $${displayedProfit.toFixed(2)}` : `📋 جميع البوليصات (${policies.length}) — إجمالي الربح: $${displayedProfit.toFixed(2)}`}
-              </div>
-              <button onClick={() => window.print()} style={{ background: "rgba(255,255,255,0.9)", color: "#764ba2", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: "bold", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>🖨️ طباعة</button>
-            </div>
+           <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    margin: "15px 0 10px",
+    flexWrap: "wrap",
+    gap: 8,
+  }}
+>
+  <div style={{ color: "white", fontWeight: "bold", fontSize: "1em", opacity: 0.9 }}>
+    {isFiltered
+      ? `🔍 النتائج: ${displayed.length} بوليصة — إجمالي الربح: $${displayedProfit.toFixed(2)}`
+      : `📋 جميع البوليصات (${policies.length}) — إجمالي الربح: $${displayedProfit.toFixed(2)}`}
+  </div>
+
+  {/* 👇 هون الأزرار مع بعض */}
+  <div style={{ display: "flex", gap: 8 }}>
+    <button
+      onClick={() => window.print()}
+      style={{
+        background: "rgba(255,255,255,0.9)",
+        color: "#764ba2",
+        border: "none",
+        borderRadius: 10,
+        padding: "8px 16px",
+        fontWeight: "bold",
+        fontSize: 13,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      🖨️ طباعة
+    </button>
+
+    <button
+      onClick={() => exportToExcel(policies)}
+      style={{
+        background: "#4CAF50",
+        color: "white",
+        border: "none",
+        borderRadius: 10,
+        padding: "8px 16px",
+        fontWeight: "bold",
+        fontSize: 13,
+        cursor: "pointer",
+      }}
+    >
+      📊 Excel
+    </button>
+  </div>
+</div>
+
             <div id="print-table" className={isCompaniesPage ? "companies-print" : "clients-print"} style={{ overflowX: "auto" }}>
               <div id="print-title" style={{ display: "none" }}>🏢 Insurance Pro — {isCompaniesPage ? "صفحة الشركات" : "صفحة الزبائن"}</div>
               <div id="print-summary" style={{ display: "none" }}>
                 {searchText.trim() && <div className="print-meta-line">🔍 {getPrintSearchLabel()}</div>}
                 {paidFilter !== "all" && <div className="print-meta-line">📊 الفلترة: {getPaidFilterLabel(paidFilter)}</div>}
               </div>
+      
               <table style={{ minWidth: "1200px", width: "100%", marginTop: 10, background: "white", borderRadius: 15, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
