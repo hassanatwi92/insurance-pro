@@ -122,29 +122,54 @@ export default function Home({
   ]);
 
 const exportToExcel = (data: Policy[]) => {
-  const formatted = data.map((p) => ({
-    "Policy Number": p.policy_num,
-    "Client Name": p.client_name,
-    "Policy Type": p.policy_type,
-    "Company": p.insurance_company,
-    "Broker": p.broker_name || "-",
-    "Buy Price": p.buy_price,
-    "Sell Price": p.sell_price,
-    "Profit": p.profit,
-    "Paid Company": p.paid_company ? "Yes" : "No",
-    "Date": formatDateDMY(p.date),
-    "Payment Type": p.client_payment_type,
-  }));
+  const formatted = data.flatMap((p) => {
+    // CASE 1: installments
+    if (p.installments && p.installments.length > 0) {
+      return p.installments.map((ins) => ({
+        "Policy Number": p.policy_num || "-",
+        "Client Name": p.client_name || "-",
+        "Policy Type": p.policy_type || "-",
+        "Company": p.insurance_company || "-",
+        "Buy Price": Number(p.buy_price || 0),
+        "Sell Price": Number(p.sell_price || 0),
+        "Installment #": `${ins.index}/${p.installments_count}`,
+        "Amount": Number(ins.amount || 0),
+        "Due Date": formatDateDMY(ins.due_date),
+        "Payment Date": formatDateDMY(ins.payment_date),
+        "Method": ins.method || "-",
+        "Receipt": ins.receipt_num || "-",
+        "Paid": ins.paid ? "Yes" : "No",
+        "Broker": p.broker_name || "-",
+      }));
+    }
+
+    // CASE 2: cash
+    return [
+      {
+        "Policy Number": p.policy_num || "-",
+        "Client Name": p.client_name || "-",
+        "Policy Type": p.policy_type || "-",
+        "Company": p.insurance_company || "-",
+        "Buy Price": Number(p.buy_price || 0),
+        "Sell Price": Number(p.sell_price || 0),
+        "Installment #": "1/1",
+        "Amount": Number(p.sell_price || 0),
+        "Due Date": formatDateDMY(p.cash_date),
+        "Payment Date": formatDateDMY(p.cash_date),
+        "Method": p.cash_method || "-",
+        "Receipt": p.cash_receipt_num || "-",
+        "Paid": p.paid_company ? "Yes" : "No",
+        "Broker": p.broker_name || "-",
+      },
+    ];
+  });
 
   const worksheet = XLSX.utils.json_to_sheet(formatted);
   const workbook = XLSX.utils.book_new();
-
   XLSX.utils.book_append_sheet(workbook, worksheet, "Policies");
 
-  const excelBuffer = XLSX.write(workbook, {
-    bookType: "xlsx",
-    type: "array",
-  });
+  XLSX.writeFile(workbook, "policies.xlsx");
+};
 
   const file = new Blob([excelBuffer], { type: "application/octet-stream" });
   saveAs(file, "policies.xlsx");
