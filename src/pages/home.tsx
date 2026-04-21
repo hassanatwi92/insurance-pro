@@ -171,10 +171,6 @@ const exportToExcel = (data: Policy[]) => {
   XLSX.writeFile(workbook, "policies.xlsx");
 };
 
-  const file = new Blob([excelBuffer], { type: "application/octet-stream" });
-  saveAs(file, "policies.xlsx");
-};
-
 
   // =============================================
   // LOAD DATA FROM SUPABASE
