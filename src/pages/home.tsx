@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import type { Page } from "../types";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -92,6 +92,28 @@ export default function Home({
   const [showPolicyTypeManager, setShowPolicyTypeManager] = useState(false);
   const [newPolicyType, setNewPolicyType] = useState("");
   const [clientSearch, setClientSearch] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
+ const filteredPolicies = useMemo(() => {
+  if (!selectedMonth) return policies;
+
+  return policies.filter((p) => {
+    // إذا البوليصة كاش
+    if (!p.installments || p.installments.length === 0) {
+      if (!p.cash_date) return false;
+
+      const month = new Date(p.cash_date).getMonth() + 1;
+      return month === parseInt(selectedMonth);
+    }
+
+    // إذا البوليصة أقساط
+    return p.installments.some((ins) => {
+      if (!ins.due_date) return false;
+
+      const month = new Date(ins.due_date).getMonth() + 1;
+      return month === parseInt(selectedMonth);
+    });
+  });
+}, [policies, selectedMonth]);
   const [editModal, setEditModal] = useState<Policy | null>(null);
   const [allClientNames, setAllClientNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,6 +142,8 @@ export default function Home({
     { date: "", method: "", receipt_num: "", amount: "" },
     { date: "", method: "", receipt_num: "", amount: "" },
   ]);
+
+
 
 const exportToExcel = (data: Policy[]) => {
   const formatted = data.flatMap((p) => {
@@ -249,7 +273,7 @@ setPolicies(
         .single();
       setPolicyTypes(typesData?.value ?? []);
       setLoading(false);
-      const filtered = policiesData.filter(
+      const filtered = (policiesData ?? []).filter(
   (p) => p.data.page === (isCompaniesPage ? "companies" : "clients")
 );
 setPolicies(
@@ -284,30 +308,40 @@ setPolicies(
   // =============================================
   // SAVE POLICIES TO SUPABASE
   // =============================================
-  async function saveData(updatedPolicies: Policy[]) {
-  setPolicies(updatedPolicies);
+async function saveData(updatedPolicies: Policy[]) {
+  try {
+    setPolicies(updatedPolicies);
 
-  const userId = userIdRef.current;
+    const userId = userIdRef.current;
+    const pageType = isCompaniesPage ? "companies" : "clients";
 
-  // امسح كل شي لهيدا المستخدم
-  const pageType = isCompaniesPage ? "companies" : "clients";
+    const { error: deleteError } = await supabase
+      .from("policies")
+      .delete()
+      .eq("user_id", userId)
+      .eq("data->>page", pageType);
 
-await supabase
-  .from("policies")
-  .delete()
-  .eq("user_id", userId)
-  .eq("data->>page", pageType);
+    if (deleteError) {
+      console.error("DELETE ERROR:", deleteError);
+      return;
+    }
 
-  // رجّع خزّن من جديد
-  const rows = updatedPolicies.map((p) => ({
-    user_id: userId,
-    data: p,
-  }));
+    const rows = updatedPolicies.map((p) => ({
+      user_id: userId,
+      data: p,
+    }));
 
-  const { error } = await supabase.from("policies").insert(rows);
+    const { error: insertError } = await supabase
+      .from("policies")
+      .insert(rows);
 
-  if (error) {
-    console.error("SAVE ERROR:", error);
+    if (insertError) {
+      console.error("INSERT ERROR:", insertError);
+      return;
+    }
+
+  } catch (err) {
+    console.error("SAVE FATAL ERROR:", err);
   }
 }
   // =============================================
@@ -430,83 +464,106 @@ await supabase
   // =============================================
   // ADD POLICY
   // =============================================
-  async function addPolicy() {
-    const buy = parseFloat(form.buy_price) || 0;
-    const sell = parseFloat(form.sell_price) || 0;
-    const profit = sell - buy;
-    if (!form.policy_num || !form.client_name) {
-      showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
-      return;
-    }
-    const selectedBroker = brokers.find((b) => b.code === form.broker_code);
-    const userId = userIdRef.current;
-const policiesUserId = userId;  
-  const newPolicy = {
-  page: isCompaniesPage ? "companies" : "clients",
-      user_id: policiesUserId,
-      policy_num: form.policy_num,
-      client_name: form.client_name,
-      policy_type: form.policy_type,
-      insurance_company: form.insurance_company,
-      broker_name: selectedBroker?.name || "",
-      broker_code: selectedBroker?.code || "",
-      buy_price: buy,
-      sell_price: sell,
-      profit,
-      paid_company: false,
-      date: getTodayDMY(),
-      client_payment_type: form.client_payment_type,
-      ...(form.client_payment_type === "cash"
-        ? {
-            cash_date: form.cash_date,
-            cash_method: form.cash_method,
-            cash_receipt_num: form.cash_receipt_num,
-          }
-        : {
-            installments_count: parseInt(form.installments_count),
-            installments: formInstallments.map((ins, i) => ({
-              index: i + 1,
-              due_date: ins.date,
-              payment_date: "",
-              method: ins.method,
-              receipt_num: ins.receipt_num,
-              amount: ins.amount,
-              paid: false,
-            })),
-          }),
-    };
-    await saveData([newPolicy, ...policies]);
-    const trimmedClientName = form.client_name.trim();
-    if (trimmedClientName && !allClientNames.includes(trimmedClientName)) {
-      await saveClientNames([...allClientNames, trimmedClientName]);
-    }
-    setForm({
-      policy_num: "",
-      client_name: "",
-      policy_type: "",
-      insurance_company: "",
-      broker_code: "",
-      buy_price: "",
-      sell_price: "",
-      client_payment_type: "cash",
-      cash_date: "",
-      cash_method: "",
-      cash_receipt_num: "",
-      installments_count: "2",
-    });
-    setClientSearch("");
-    setFormInstallments([
-      { date: "", method: "", receipt_num: "", amount: "" },
-      { date: "", method: "", receipt_num: "", amount: "" },
-    ]);
-    setShowDialog(false);
-    showMessage(`✅ تمت إضافة البوليصة! الربح: $${profit.toFixed(2)}`, "success");
+ async function addPolicy() {
+  const currentPolicies = Array.isArray(policies) ? policies : [];
+
+  const buy = parseFloat(form?.buy_price || "") || 0;
+  const sell = parseFloat(form.sell_price || "") || 0;
+  const profit = sell - buy;
+
+  if (!form.policy_num || !form?.client_name || ""
+  ) {
+    showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
+    return;
   }
+
+
+
+const exists = policies.some(
+  (p) => p.policy_num === form.policy_num
+);
+
+if (exists) {
+  showMessage("⚠️ البوليصة موجودة مسبقاً", "warning");
+  return;
+}
+
+  const selectedBroker = brokers.find(
+    (b) => b.code === form.broker_code
+  );
+
+  const newPolicy = {
+    page: isCompaniesPage ? "companies" : "clients",
+    user_id: userIdRef.current,
+    policy_num: form.policy_num,
+    client_name: form.client_name,
+    policy_type: form.policy_type,
+    insurance_company: form.insurance_company,
+    broker_name: selectedBroker?.name || "",
+    broker_code: selectedBroker?.code || "",
+    buy_price: buy,
+    sell_price: sell,
+    profit,
+    paid_company: false,
+    date: getTodayDMY(),
+    client_payment_type: form.client_payment_type,
+    ...(form.client_payment_type === "cash"
+      ? {
+          cash_date: form.cash_date,
+          cash_method: form.cash_method,
+          cash_receipt_num: form.cash_receipt_num,
+        }
+      : {
+          installments_count: parseInt(form.installments_count),
+          installments: formInstallments.map((ins, i) => ({
+            index: i + 1,
+            due_date: ins.date,
+            payment_date: "",
+            method: ins.method,
+            receipt_num: ins.receipt_num,
+            amount: ins.amount,
+            paid: false,
+          })),
+        }),
+  };
+
+  try {
+    const updated = [newPolicy, ...currentPolicies];
+
+    await saveData(updated);
+    setPolicies(updated);
+
+  } catch (err) {
+    console.error(err);
+    showMessage("❌ خطأ بالحفظ", "warning");
+    return;
+  }
+
+  setForm({
+    policy_num: "",
+    client_name: "",
+    policy_type: "",
+    insurance_company: "",
+    broker_code: "",
+    buy_price: "",
+    sell_price: "",
+    client_payment_type: "cash",
+    cash_date: "",
+    cash_method: "",
+    cash_receipt_num: "",
+    installments_count: "2",
+  });
+
+  setShowDialog(false);
+
+  showMessage("✅ تمت إضافة البوليصة", "success");
+}
+  
   // =============================================
   // TOGGLE INSTALLMENT
   // =============================================
   async function toggleInstallment(policyId: number, instIndex: number) {
-    const updated = policies.map((p) => {
+    const updated = (filteredPolicies || []).map((p) =>  {
       if (p.id !== policyId || !p.installments) return p;
       const updatedInstallments = p.installments.map((ins) =>
         ins.index === instIndex ? { ...ins, paid: !ins.paid } : ins
@@ -566,22 +623,34 @@ const policiesUserId = userId;
   // =============================================
   // FILTER
   // =============================================
-  const displayed = policies.filter((p) => {
-    const q = searchText.trim().toLowerCase();
-    if (!q) return true;
-    if (searchField === "client_name") return p.client_name.toLowerCase().includes(q);
-    if (searchField === "policy_num") return p.policy_num.toLowerCase().includes(q);
-    if (searchField === "insurance_company") return (p.insurance_company || "").toLowerCase().includes(q);
-    if (searchField === "policy_type") return (p.policy_type || "").toLowerCase().includes(q);
-    if (searchField === "broker") return (p.broker_code || "").toLowerCase().includes(q);
-    return (
-      p.client_name.toLowerCase().includes(q) ||
-      p.policy_num.toLowerCase().includes(q) ||
-      (p.insurance_company || "").toLowerCase().includes(q) ||
-      (p.policy_type || "").toLowerCase().includes(q) ||
-      (p.broker_code || "").toLowerCase().includes(q)
-    );
-  });
+const uniquePolicies = Array.from(
+  new Map(policies.map(p => [p.policy_num, p])).values()
+);
+
+  const displayed = uniquePolicies.filter((p) => {
+  const q = searchText.trim().toLowerCase();
+  if (!q) return true;
+
+  if (searchField === "client_name")
+    return p.client_name.toLowerCase().includes(q);
+
+  if (searchField === "policy_num")
+    return p.policy_num.toLowerCase().includes(q);
+
+  if (searchField === "insurance_company")
+    return (p.insurance_company || "").toLowerCase().includes(q);
+
+  if (searchField === "policy_type")
+    return (p.policy_type || "").toLowerCase().includes(q);
+
+  if (searchField === "broker")
+    return (p.broker_code || "").toLowerCase().includes(q);
+
+  return (
+    p.client_name.toLowerCase().includes(q) ||
+    p.policy_num.toLowerCase().includes(q)
+  );
+});
   function getPaidFilterLabel(value: PaidFilter) {
     if (value === "paid") return "مدفوع";
     if (value === "unpaid") return "غير مدفوع";
@@ -692,13 +761,17 @@ const policiesUserId = userId;
           </select>
           <div style={{ position: "relative", flex: 1 }}>
             <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="ابحث..." style={{ ...inputStyle, margin: 0 }} />
+           
             {searchText && <button onClick={() => setSearchText("")} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", cursor: "pointer", fontSize: 14, color: "#999" }}>✕</button>}
+          
           </div>
+          
         </div>
+        
         {/* Paid filter toggles */}
         <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
           {([
-            { value: "all", label: `📋 الكل (${policies.length})`, color: "#2196F3" },
+            { value: "all", label: `📋 الكل (${uniquePolicies.length})`, color: "#2196F3" },
             { value: "unpaid", label: `❌ غير مدفوع (${unpaidCount})`, color: "#f44336" },
             { value: "paid", label: `✅ مدفوع (${paidCount})`, color: "#4CAF50" },
           ] as { value: PaidFilter; label: string; color: string }[]).map(({ value, label, color }) => (
@@ -738,7 +811,7 @@ const policiesUserId = userId;
   <div style={{ color: "white", fontWeight: "bold", fontSize: "1em", opacity: 0.9 }}>
     {isFiltered
       ? `🔍 النتائج: ${displayed.length} بوليصة — إجمالي الربح: $${displayedProfit.toFixed(2)}`
-      : `📋 جميع البوليصات (${policies.length}) — إجمالي الربح: $${displayedProfit.toFixed(2)}`}
+      : `📋 جميع البوليصات (${uniquePolicies.length}) — إجمالي الربح: $${displayedProfit.toFixed(2)}`}
   </div>
 
   {/* 👇 هون الأزرار مع بعض */}
@@ -761,7 +834,7 @@ const policiesUserId = userId;
     </button>
 
     <button
-      onClick={() => exportToExcel(policies)}
+      onClick={() => exportToExcel(displayed)}
       style={{
         background: "#4CAF50",
         color: "white",
@@ -775,6 +848,18 @@ const policiesUserId = userId;
     >
       📊 Excel
     </button>
+    <select
+  value={selectedMonth}
+  onChange={(e) => setSelectedMonth(e.target.value)}
+  style={{ ...fieldStyle, maxWidth: 180, margin: "10px 0" }}
+>
+  <option value="">كل الأشهر</option>
+  {[...Array(12)].map((_, i) => (
+    <option key={i} value={i + 1}>
+      شهر {i + 1}
+    </option>
+  ))}
+</select>
   </div>
 </div>
 
@@ -799,7 +884,13 @@ const policiesUserId = userId;
                   {displayed.flatMap((p, i) => {
                     const rows: React.ReactNode[] = [];
                     if (p.installments && p.installments.length > 0) {
-                      p.installments.forEach((ins, idx) => {
+                      const filteredInstallments = p.installments.filter((ins) => {
+  if (!selectedMonth) return true;
+
+  const date = new Date(ins.due_date || ins.payment_date);
+  return date.getMonth() + 1 === Number(selectedMonth);
+});
+                      filteredInstallments.forEach((ins, idx) => {
                         const isPaid = !!(ins.payment_date && ins.method);
                         if (paidFilter === "paid" && !isPaid) return;
                         if (paidFilter === "unpaid" && isPaid) return;
@@ -826,9 +917,9 @@ const policiesUserId = userId;
                                     const y = date.getFullYear();
                                     const m = String(date.getMonth() + 1).padStart(2, "0");
                                     const d = String(date.getDate()).padStart(2, "0");
-                                    updateInstallmentField(p.id, ins.index, "payment_date", `${y}-${m}-${d}`);
+                                    updateInstallmentField(p.id ?? 0, ins.index, "payment_date", `${y}-${m}-${d}`);
                                   } else {
-                                    updateInstallmentField(p.id, ins.index, "payment_date", "");
+                                    updateInstallmentField(p.id ?? 0, ins.index, "payment_date", "");
                                   }
                                 }}
                                 dateFormat="dd-MM-yyyy"
@@ -840,11 +931,11 @@ const policiesUserId = userId;
                               {ins.method === "ملغى" ? (
                                 <span style={{ color: "#999", fontWeight: "bold" }}>ملغى</span>
                               ) : (
-                                <input type="text" value={ins.method || ""} onChange={(e) => updateInstallmentField(p.id, ins.index, "method", e.target.value)} placeholder="طريقة الدفع" style={{ width: "100%" }} />
+                                <input type="text" value={ins.method || ""} onChange={(e) => updateInstallmentField(p.id ?? 0, ins.index, "method", e.target.value)} placeholder="طريقة الدفع" style={{ width: "100%" }} />
                               )}
                             </td>
                             <td style={tdStyle}>
-                              <input type="text" value={ins.receipt_num || ""} onChange={(e) => updateInstallmentField(p.id, ins.index, "receipt_num", e.target.value)} placeholder="رقم الواصل" style={{ width: "100%" }} />
+                              <input type="text" value={ins.receipt_num || ""} onChange={(e) => updateInstallmentField(p.id ?? 0, ins.index, "receipt_num", e.target.value)} placeholder="رقم الواصل" style={{ width: "100%" }} />
                             </td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
@@ -942,7 +1033,9 @@ const policiesUserId = userId;
                           <td style={tdStyle}>{p.broker_code || "-"}</td>
                         </tr>
                       );
+                      
                     }
+                    
                     return rows;
                   })}
                   {/* صف المجموع للشاشة */}
@@ -972,6 +1065,7 @@ const policiesUserId = userId;
           </div>
         )}
       </div>
+      
       {/* ===================== ADD POLICY DIALOG ===================== */}
       {showDialog && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 1000, padding: 20, overflowY: "auto" }}
@@ -981,12 +1075,26 @@ const policiesUserId = userId;
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
                 <label style={labelStyle}>رقم البوليصة *</label>
-                <input type="text" value={form.policy_num} onChange={(e) => { const value = e.target.value; setForm({ ...form, policy_num: value }); if (!isCompaniesPage) autofillFromCompanyPolicy(value); }} placeholder="POL-001" style={fieldStyle} />
+                <input type="text" value={form?.policy_num || ""}onChange={(e) => {
+  const value = e.target.value;
+
+  setForm((prev) => ({
+    ...prev,
+    policy_num: value,
+  }));
+
+  if (!isCompaniesPage && value.length > 2) {
+try {
+   autofillFromCompanyPolicy(value);
+} catch (e) {
+  console.log("autofill error", e);
+}  }
+}} placeholder="POL-001" style={fieldStyle} />
               </div>
               <div>
                 <label style={labelStyle}>نوع البوليصة</label>
                 {policyTypes.length > 0 ? (
-                  <select value={form.policy_type} onChange={(e) => setForm({ ...form, policy_type: e.target.value })} style={{ ...fieldStyle, background: "white" }}>
+                  <select value={form.policy_type} onChange={(e) => setForm((prev) => ({...(prev || {}), policy_type: e.target.value }))} style={{ ...fieldStyle, background: "white" }}>
                     <option value="">— اختر النوع —</option>
                     {policyTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -996,7 +1104,10 @@ const policiesUserId = userId;
               </div>
               <div style={{ position: "relative" }}>
                 <label style={labelStyle}>اسم العميل *</label>
-                <input type="text" value={clientSearch || form.client_name} onChange={(e) => { setClientSearch(e.target.value); setForm({ ...form, client_name: e.target.value }); }} placeholder="اكتب اسم العميل..." style={fieldStyle} />
+                <input type="text" value={clientSearch || form?.client_name || ""} onChange={(e) => { setClientSearch(e.target.value); setForm((prev) => ({
+  ...(prev || {}),
+  client_name: e.target.value
+})); }} placeholder="اكتب اسم العميل..." style={fieldStyle} />
                 {clientSearch && filteredClients.length > 0 && (
                   <div style={{ position: "absolute", top: "100%", right: 0, left: 0, background: "white", border: "1px solid #ddd", borderRadius: 8, maxHeight: 150, overflowY: "auto", zIndex: 1000 }}>
                     {filteredClients.map((name) => (
@@ -1008,7 +1119,10 @@ const policiesUserId = userId;
               <div>
                 <label style={labelStyle}>🏦 شركة التأمين</label>
                 {companyList.length > 0 ? (
-                  <select value={form.insurance_company} onChange={(e) => setForm({ ...form, insurance_company: e.target.value })} style={{ ...fieldStyle, background: "white" }}>
+                  <select value={form?.insurance_company || ""} onChange={(e) => setForm((prev) => ({
+  ...(prev || {}),
+  insurance_company: e.target.value
+}))} style={{ ...fieldStyle, background: "white" }}>
                     <option value="">— اختر الشركة —</option>
                     {companyList.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -1020,7 +1134,7 @@ const policiesUserId = userId;
             <div style={{ marginBottom: 10 }}>
               <label style={labelStyle}>👔 Broker</label>
               {brokers.length > 0 ? (
-                <select value={form.broker_code} onChange={(e) => setForm({ ...form, broker_code: e.target.value })} style={{ ...fieldStyle, background: "white" }}>
+                <select value={form.broker_code} onChange={(e) => setForm((prev) => ({...(prev || {}), broker_code: e.target.value }))} style={{ ...fieldStyle, background: "white" }}>
                   <option value="">— اختر الوسيط —</option>
                   {brokers.map((b) => <option key={b.code} value={b.code}>{b.name} — {b.code}</option>)}
                 </select>
@@ -1031,11 +1145,11 @@ const policiesUserId = userId;
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
               <div>
                 <label style={labelStyle}>سعر الشراء ($)</label>
-                <input type="number" value={form.buy_price} onChange={(e) => setForm({ ...form, buy_price: e.target.value })} placeholder="0.00" style={fieldStyle} />
+                <input type="number" value={form.buy_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), buy_price: e.target.value }))} placeholder="0.00" style={fieldStyle} />
               </div>
               <div>
                 <label style={labelStyle}>سعر البيع ($)</label>
-                <input type="number" value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} placeholder="0.00" style={fieldStyle} />
+                <input type="number" value={form.sell_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), sell_price: e.target.value }))} placeholder="0.00" style={fieldStyle} />
               </div>
             </div>
             {form.buy_price && form.sell_price && (
@@ -1075,12 +1189,12 @@ const policiesUserId = userId;
                   </div>
                   <div>
                     <label style={labelStyle}>🏦 طريقة الدفع</label>
-                    <input type="text" value={form.cash_method} onChange={(e) => setForm({ ...form, cash_method: e.target.value })} placeholder="مثال: كاش، شيك، حوالة..." style={fieldStyle} />
+                    <input type="text" value={form.cash_method} onChange={(e) => setForm((prev) => ({...(prev || {}), cash_method: e.target.value }))} placeholder="مثال: كاش، شيك، حوالة..." style={fieldStyle} />
                   </div>
                 </div>
                 <div>
                   <label style={labelStyle}>🧾 رقم الواصل</label>
-                  <input type="text" value={form.cash_receipt_num} onChange={(e) => setForm({ ...form, cash_receipt_num: e.target.value })} placeholder="رقم الواصل أو الإيصال" style={fieldStyle} />
+                  <input type="text" value={form.cash_receipt_num} onChange={(e) => setForm((prev) => ({...(prev || {}), cash_receipt_num: e.target.value }))} placeholder="رقم الواصل أو الإيصال" style={fieldStyle} />
                 </div>
               </div>
             )}
@@ -1111,7 +1225,7 @@ const policiesUserId = userId;
                           placeholderText="dd-mm-yyyy"
                           customInput={<input style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />}
                         />
-                        <input type="number" value={ins.amount || ""} onChange={(e) => { const next = [...formInstallments]; next[i] = { ...next[i], amount: e.target.value }; setFormInstallments(next); }} placeholder="المبلغ $" style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />
+                        <input type="number" value={ins.amount || ""}   placeholder="المبلغ $" style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />
                       </div>
                     </div>
                   ))}
@@ -1187,7 +1301,7 @@ const policiesUserId = userId;
             )}
             <div style={{ display: "flex", gap: 10, marginTop: 15 }}>
               <button onClick={async () => {
-                const updated = policies.map((p) => p.id === editModal.id ? editModal : p);
+                const updated = (filteredPolicies || []).map((p) => p.id === editModal.id ? editModal : p);
                 await saveData(updated);
                 const trimmedClientName = editModal.client_name.trim();
                 if (trimmedClientName && !allClientNames.includes(trimmedClientName)) {
@@ -1216,6 +1330,7 @@ const policiesUserId = userId;
               const totalPaid = paidInsts.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
               const totalAll = insts.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
               const remaining = remainingInstallments(paymentModal);
+
               return (
                 <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", fontSize: "0.82em", fontWeight: "bold" }}>
                   <span style={{ color: "#4CAF50" }}>✅ مدفوع: {paidInsts.length} قسط</span>
@@ -1230,26 +1345,54 @@ const policiesUserId = userId;
                 <div key={ins.index} style={{ marginBottom: 10, background: ins.paid ? "#f0fff0" : "#fff8f8", borderRadius: 12, border: `1px solid ${ins.paid ? "#c8e6c9" : "#ffcdd2"}`, padding: "10px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontWeight: "bold", color: "#2196F3", fontSize: "0.88em" }}>قسط {ins.index}</span>
-                    <button onClick={() => toggleInstallment(paymentModal.id, ins.index)} style={{ padding: "5px 14px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: "0.8em", fontWeight: "bold", fontFamily: "inherit", background: ins.paid ? "#FF9800" : "#4CAF50", color: "white" }}>
+                    <button onClick={() => toggleInstallment(paymentModal?.id ?? 0, ins.index)} style={{ padding: "5px 14px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: "0.8em", fontWeight: "bold", fontFamily: "inherit", background: ins.paid ? "#FF9800" : "#4CAF50", color: "white" }}>
                       {ins.paid ? "↩ إلغاء" : "✅ مدفوع"}
                     </button>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
                     <div>
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>📅 التاريخ</div>
-                      <input type="date" value={ins.payment_date || ""} onChange={(e) => updateInstallmentField(paymentModal.id, ins.index, "payment_date", e.target.value)} style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
+                      <input type="date" value={ins.payment_date || ""}onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+  updateInstallmentField(
+    paymentModal?.id ?? 0,
+    ins.index,
+    "payment_date",
+    e.target.value
+  )
+} style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
                     </div>
                     <div>
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>🏦 الطريقة</div>
-                      <input type="text" value={ins.method || ""} onChange={(e) => updateInstallmentField(paymentModal.id, ins.index, "method", e.target.value)} placeholder="كاش، شيك..." style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
+                      <input type="text" value={ins.method || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+  updateInstallmentField(
+    paymentModal?.id ?? 0,
+    ins.index,
+    "method",
+    e.target.value
+  )
+} placeholder="كاش، شيك..." style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
                     </div>
                     <div>
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>🧾 رقم الواصل</div>
-                      <input type="text" value={ins.receipt_num || ""} onChange={(e) => updateInstallmentField(paymentModal.id, ins.index, "receipt_num", e.target.value)} placeholder="رقم الواصل" style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
+                      <input type="text" value={ins.receipt_num || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+  updateInstallmentField(
+    paymentModal?.id ?? 0,
+    ins.index,
+    "receipt_num",
+    e.target.value
+  )
+} placeholder="رقم الواصل" style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
                     </div>
                     <div>
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>💵 المبلغ</div>
-                      <input type="number" value={ins.amount || ""} onChange={(e) => updateInstallmentField(paymentModal.id, ins.index, "amount", e.target.value)} placeholder="0.00" style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
+                      <input type="number" value={ins.amount || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+  updateInstallmentField(
+    paymentModal?.id ?? 0,
+    ins.index,
+    "amount",
+    e.target.value
+  )
+} placeholder="0.00" style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
                     </div>
                   </div>
                 </div>
