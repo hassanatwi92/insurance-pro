@@ -123,19 +123,19 @@ export default function Home({
     .filter((name) => name.toLowerCase().includes(clientSearch.toLowerCase()))
     .slice(0, 10);
   const [form, setForm] = useState({
-    policy_num: "",
-    client_name: "",
-    policy_type: "",
-    insurance_company: "",
-    broker_code: "",
-    buy_price: "",
-    sell_price: "",
-    client_payment_type: "cash" as "cash" | "installment",
-    cash_date: "",
-    cash_method: "",
-    cash_receipt_num: "",
-    installments_count: "2",
-  });
+  policy_num: "",
+  policy_type: "",
+  client_name: "",
+  insurance_company: "",
+  broker_code: "",
+  buy_price: 0,
+  sell_price: 0,
+  client_payment_type: "cash",
+  cash_date: "",
+  cash_method: "",
+  cash_receipt_num: "",
+  installments_count: 0,
+});
   const [formInstallments, setFormInstallments] = useState<
     { date: string; method: string; receipt_num: string; amount: string }[]
   >([
@@ -436,16 +436,15 @@ async function saveData(updatedPolicies: Policy[]) {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
   }
-  function updateInstallmentsCount(count: string) {
-    const n = Math.max(1, Math.min(60, parseInt(count) || 1));
+  function updateInstallmentsCount(count: number) {
+    const n = Math.max(1, Math.min(60, count || 1));
     const current = formInstallments;
     const next = Array.from(
       { length: n },
       (_, i) => current[i] || { date: "", method: "", receipt_num: "", amount: "" }
     );
     setFormInstallments(next);
-    setForm({ ...form, installments_count: String(n) });
-  }
+setForm({ ...form, installments_count: n });  }
   function autofillFromCompanyPolicy(policyNum: string) {
     if (isCompaniesPage) return;
     const matched = companyPolicies.find(
@@ -467,18 +466,15 @@ async function saveData(updatedPolicies: Policy[]) {
  async function addPolicy() {
   const currentPolicies = Array.isArray(policies) ? policies : [];
 
-  const buy = parseFloat(form?.buy_price || "") || 0;
-  const sell = parseFloat(form.sell_price || "") || 0;
+  const buy = Number(form.buy_price) || 0;
+const sell = Number(form.sell_price) || 0;
   const profit = sell - buy;
 
-  if (!form.policy_num || !form?.client_name || ""
-  ) {
-    showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
+  if (!form.policy_num || !form.client_name)
+     {showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
     return;
   }
-
-
-
+  
 const exists = policies.some(
   (p) => p.policy_num === form.policy_num
 );
@@ -506,7 +502,7 @@ if (exists) {
     profit,
     paid_company: false,
     date: getTodayDMY(),
-    client_payment_type: form.client_payment_type,
+    client_payment_type: form.client_payment_type as "cash" | "installment",
     ...(form.client_payment_type === "cash"
       ? {
           cash_date: form.cash_date,
@@ -514,7 +510,7 @@ if (exists) {
           cash_receipt_num: form.cash_receipt_num,
         }
       : {
-          installments_count: parseInt(form.installments_count),
+          installments_count: form.installments_count,
           installments: formInstallments.map((ins, i) => ({
             index: i + 1,
             due_date: ins.date,
@@ -541,17 +537,17 @@ if (exists) {
 
   setForm({
     policy_num: "",
-    client_name: "",
-    policy_type: "",
-    insurance_company: "",
-    broker_code: "",
-    buy_price: "",
-    sell_price: "",
-    client_payment_type: "cash",
-    cash_date: "",
-    cash_method: "",
-    cash_receipt_num: "",
-    installments_count: "2",
+  policy_type: "",
+  client_name: "",
+  insurance_company: "",
+  broker_code: "",
+  buy_price: 0,
+  sell_price: 0,
+  client_payment_type: "cash",
+  cash_date: "",
+  cash_method: "",
+  cash_receipt_num: "",
+  installments_count: 0,
   });
 
   setShowDialog(false);
@@ -563,7 +559,7 @@ if (exists) {
   // TOGGLE INSTALLMENT
   // =============================================
   async function toggleInstallment(policyId: number, instIndex: number) {
-    const updated = (filteredPolicies || []).map((p) =>  {
+    const updated = policies.map((p) =>  {
       if (p.id !== policyId || !p.installments) return p;
       const updatedInstallments = p.installments.map((ins) =>
         ins.index === instIndex ? { ...ins, paid: !ins.paid } : ins
@@ -669,7 +665,9 @@ const uniquePolicies = Array.from(
     }
     return `بحث: ${value}`;
   }
-  const displayedProfit = displayed.reduce((sum, p) => sum + p.profit, 0);
+  const displayedProfit = displayed.reduce((sum, p) => {
+  return sum + (p.sell_price - p.buy_price);
+}, 0);
   const unpaidCount = policies.filter((p) => !p.paid_company).length;
   const paidCount = policies.filter((p) => p.paid_company).length;
   const isFiltered = paidFilter !== "all" || searchText.trim() !== "";
@@ -1145,23 +1143,23 @@ try {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
               <div>
                 <label style={labelStyle}>سعر الشراء ($)</label>
-                <input type="number" value={form.buy_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), buy_price: e.target.value }))} placeholder="0.00" style={fieldStyle} />
+                <input type="number" value={form.buy_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), buy_price: parseFloat(e.target.value) || 0 }))} placeholder="0.00" style={fieldStyle} />
               </div>
               <div>
                 <label style={labelStyle}>سعر البيع ($)</label>
-                <input type="number" value={form.sell_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), sell_price: e.target.value }))} placeholder="0.00" style={fieldStyle} />
+                <input type="number" value={form.sell_price || ""} onChange={(e) => setForm((prev) => ({...(prev || {}), sell_price: parseFloat(e.target.value) || 0 }))} placeholder="0.00" style={fieldStyle} />
               </div>
             </div>
-            {form.buy_price && form.sell_price && (
+            {typeof form.buy_price === "number" && typeof form.sell_price === "number" && (
               <div style={{ background: "#f0f9f0", borderRadius: 8, padding: "8px 12px", marginBottom: 14, textAlign: "center", fontWeight: "bold", color: "#4CAF50", fontSize: "0.9em" }}>
-                الربح المتوقع: ${(parseFloat(form.sell_price || "0") - parseFloat(form.buy_price || "0")).toFixed(2)}
+                الربح المتوقع: ${(form.sell_price - form.buy_price).toFixed(2)}
               </div>
             )}
             <div style={{ marginBottom: 14 }}>
               <label style={{ ...labelStyle, fontSize: "0.95em", color: "#333" }}>💳 طريقة دفع العميل</label>
               <div style={{ display: "flex", gap: 8 }}>
                 {(["cash", "installment"] as const).map((t) => (
-                  <button key={t} type="button" onClick={() => setForm((prev) => ({ ...prev, client_payment_type: t }))} style={{ flex: 1, padding: "10px", border: "none", borderRadius: 10, fontSize: 14, fontWeight: "bold", cursor: "pointer", fontFamily: "inherit", background: form.client_payment_type === t ? (t === "cash" ? "#4CAF50" : "#2196F3") : "#f0f0f0", color: form.client_payment_type === t ? "white" : "#555" }}>
+                  <button key={t} type="button" onClick={() => setForm((prev) => ({ ...prev, client_payment_type: t as "cash" | "installment" }))} style={{ flex: 1, padding: "10px", border: "none", borderRadius: 10, fontSize: 14, fontWeight: "bold", cursor: "pointer", fontFamily: "inherit", background: form.client_payment_type === t ? (t === "cash" ? "#4CAF50" : "#2196F3") : "#f0f0f0", color: form.client_payment_type === t ? "white" : "#555" }}>
                     {t === "cash" ? "💵 نقدي" : "📅 تقسيط"}
                   </button>
                 ))}
@@ -1202,7 +1200,7 @@ try {
               <div style={{ background: "#f8f9ff", border: "1px solid #bbdefb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
                 <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>عدد الأقساط</label>
-                  <input type="number" min="1" max="60" value={form.installments_count} onChange={(e) => updateInstallmentsCount(e.target.value)} style={{ ...fieldStyle, width: "120px" }} />
+                  <input type="number" min="1" max="60" value={form.installments_count} onChange={(e) => updateInstallmentsCount(parseInt(e.target.value || "0"))} style={{ ...fieldStyle, width: "120px" }} />
                 </div>
                 <div style={{ maxHeight: 280, overflowY: "auto" }}>
                   {formInstallments.map((ins, i) => (
@@ -1225,7 +1223,11 @@ try {
                           placeholderText="dd-mm-yyyy"
                           customInput={<input style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />}
                         />
-                        <input type="number" value={ins.amount || ""}   placeholder="المبلغ $" style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />
+                        <input type="number" value={ins.amount || ""} onChange={(e) => {
+  const next = [...formInstallments];
+  next[i] = { ...next[i], amount: e.target.value };
+  setFormInstallments(next);
+}}  placeholder="المبلغ $" style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />
                       </div>
                     </div>
                   ))}
@@ -1280,7 +1282,7 @@ try {
                         }} />
                         <input type="number" value={ins.amount || ""} onChange={(e) => {
                           const updated = [...(editModal.installments || [])];
-                          updated[i] = { ...updated[i], amount: e.target.value };
+                          updated[i] = { ...updated[i], amount: String(e.target.value) };
                           setEditModal({ ...editModal, installments: updated });
                         }} placeholder="المبلغ" />
                         <input type="text" value={ins.method || ""} onChange={(e) => {
@@ -1390,7 +1392,7 @@ try {
     paymentModal?.id ?? 0,
     ins.index,
     "amount",
-    e.target.value
+    String(e.target.value)
   )
 } placeholder="0.00" style={{ width: "100%", padding: "6px", border: "1px solid #ddd", borderRadius: 7, fontSize: 11, boxSizing: "border-box" }} />
                     </div>
