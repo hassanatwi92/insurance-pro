@@ -143,7 +143,28 @@ export default function Home({
     { date: "", method: "", receipt_num: "", amount: "" },
   ]);
 
+useEffect(() => {
+  const firstDate = formInstallments[0]?.date;
+  if (!firstDate) return;
 
+  const base = new Date(firstDate);
+
+  const updated = formInstallments.map((ins, i) => {
+    const d = new Date(base);
+    d.setMonth(d.getMonth() + i);
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+
+    return {
+      ...ins,
+      date: `${y}-${m}-${day}`,
+    };
+  });
+
+  setFormInstallments(updated);
+}, [formInstallments[0]?.date]);
 
 const exportToExcel = (data: Policy[]) => {
   const formatted = data.flatMap((p) => {
@@ -436,15 +457,26 @@ async function saveData(updatedPolicies: Policy[]) {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
   }
-  function updateInstallmentsCount(count: number) {
-    const n = Math.max(1, Math.min(60, count || 1));
-    const current = formInstallments;
-    const next = Array.from(
-      { length: n },
-      (_, i) => current[i] || { date: "", method: "", receipt_num: "", amount: "" }
+ function updateInstallmentsCount(count: number) {
+  const n = Math.max(1, Math.min(60, count || 1));
+
+  const next = Array.from({ length: n }, (_, i) => {
+    const old = formInstallments[i];
+
+
+    return (
+      old || {
+        date: "",
+        method: "",
+        receipt_num: "",
+        amount: "",
+      }
     );
-    setFormInstallments(next);
-setForm({ ...form, installments_count: n });  }
+  });
+
+  setFormInstallments(next);
+  setForm({ ...form, installments_count: n });
+}
   function autofillFromCompanyPolicy(policyNum: string) {
     if (isCompaniesPage) return;
     const matched = companyPolicies.find(
@@ -692,6 +724,30 @@ const uniquePolicies = Array.from(
   let totalBuy = 0;
   let totalSell = 0;
   let totalInstallments = 0;
+  
+const printPolicyValue = displayed.reduce((sum, p) => {
+  return sum + (p.sell_price || 0);
+}, 0);
+
+const printPaidValue = displayed.reduce((sum, p) => {
+  if (p.installments && p.installments.length > 0) {
+    return (
+      sum +
+      p.installments
+        .filter((i) => i.paid)
+        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+    );
+  }
+
+  if (p.cash_date && p.cash_method) {
+    return sum + (p.sell_price || 0);
+  }
+
+  return sum;
+}, 0);
+
+const printRemaining = printPolicyValue - printPaidValue;
+
   displayed.forEach((p) => {
     if (p.installments && p.installments.length > 0) {
       const visibleInstallments = p.installments.filter((ins) => {
@@ -869,6 +925,8 @@ const uniquePolicies = Array.from(
               </div>
       
               <table style={{ minWidth: "1200px", width: "100%", marginTop: 10, background: "white", borderRadius: 15, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", borderCollapse: "collapse" }}>
+
+  
                 <thead>
                   <tr>
                     {["رقم البوليصة", "العميل", "نوع", "شركة", "سعر الشراء", "سعر البيع", "رقم القسط", "القسط", "تاريخ الاستحقاق", "تاريخ الدفع", "طريقة الدفع", "رقم الواصل", "مدفوع", "Broker"].map((h) => (
@@ -1054,8 +1112,15 @@ const uniquePolicies = Array.from(
                   </tr>
                 </tbody>
               </table>
+              <div className="print-only-footer">
+  💰 قيمة البوليصة: ${printPolicyValue.toFixed(2)} <br />
+  💵 قيمة الدفعات: ${printPaidValue.toFixed(2)} <br />
+  📉 الباقي: ${printRemaining.toFixed(2)}
+</div>
             </div>
+            
           </>
+          
         )}
         {displayed.length === 0 && !message && (
           <div style={{ color: "rgba(255,255,255,0.7)", textAlign: "center", marginTop: 30, fontSize: "1.1em" }}>
@@ -1508,28 +1573,46 @@ try {
           </div>
         </div>
       )}
+
       {/* ===================== PRINT STYLES ===================== */}
       <style>{`
+      .print-only-footer {
+  display: none !important;
+}
         @media print {
           body * { visibility: hidden !important; }
           #print-table, #print-table * { visibility: visible !important; }
           #print-table {
-            position: fixed;
-            inset: 0;
-            width: 100%;
+              position: absolute;
+ top: 0;
+  right: 0;
+            transform: scale(0.5);   /* 👈 نفس 50% */
+    transform-origin: top right;
+    width: 200%; /* 👈 تعويض التصغير */
             padding: 7px;
             background: white;
             direction: rtl;
             font-family: system-ui, sans-serif;
           }
-          #print-table table {
-            width: auto;
-            margin: 0 auto;
-            border-collapse: collapse;
-            font-size: 12px;
-            transform: scale(0.80);
-            transform-origin: right;
-          }
+
+
+.print-only-footer {
+  display: block !important;
+  margin-top: 15px;
+  text-align: center;
+  font-size: 14px;
+  background: #f0f0f0;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
+     #print-table table {
+  width: auto !important;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
           #print-table th {
             background: #2196F3 !important;
             color: white !important;
@@ -1538,11 +1621,15 @@ try {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
+
           #print-table td {
-            padding: 7px 6px;
-            border-bottom: 1px solid #ddd;
-            text-align: center;
+             padding: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
           }
+
           #print-table tr:nth-child(even) td {
             background: #f9f9f9;
             -webkit-print-color-adjust: exact;
