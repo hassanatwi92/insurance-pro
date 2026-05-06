@@ -789,9 +789,31 @@ const printRemaining = printPolicyValue - printPaidValue;
           <button onClick={logout} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "8px 14px", color: "white", cursor: "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: "bold" }}>🚪 خروج</button>
           <div style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "8px 14px", color: "white", fontSize: 12, fontWeight: "bold", textAlign: "center" }}>👤 {username.slice(0, 8)}...</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <h1 style={{ color: "white", textAlign: "center", fontSize: "1.7em", fontWeight: "bold", margin: 0, flex: 1 }}>🏢 SIGMA </h1>
-        </div>
+                <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 50
+  }}
+> <h1
+    style={{
+      color: "white",
+      fontSize: "3.7em",
+      fontWeight: "bold",
+      margin: 0
+    }}
+  >
+    SIGMA
+  </h1>
+  <img
+    src="/logosigma.png" // حط اسم ومسار الصورة هون
+    alt="logo"
+    style={{ width: 45, height: 45, marginRight: 8 }}
+  />
+
+ 
+</div>
         {/* Nav tabs */}
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
           {([
