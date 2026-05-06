@@ -125,9 +125,24 @@ export default function Login({ onLogin }: LoginProps) {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 56, marginBottom: 8 }}>🏢</div>
-          <h1 style={{ color: "white", fontSize: "1.75em", fontWeight: "bold", margin: 0 }}>
-            Insurance Pro
+                <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    
+  }}
+>
+  <img
+  src="/logosigma.png"
+  alt="logo"
+  style={{ width: 45, height: 45, marginRight: 8 }}
+/>
+
+ 
+</div>
+          <h1 style={{ color: "white", fontSize: "2.75em", fontWeight: "bold", margin: 0 }}>
+            SIGMA
           </h1>
           <p style={{ color: "rgba(255,255,255,0.7)", marginTop: 6, fontSize: "0.9em" }}>
             {mode === "login" ? "سجّل دخولك للمتابعة" : "إنشاء حساب جديد"}
