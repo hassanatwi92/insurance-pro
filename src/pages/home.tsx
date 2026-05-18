@@ -13,7 +13,7 @@ interface Installment {
   payment_date: string;
   method: string;
   receipt_num: string;
-  amount: string;
+  amount: number;
   paid: boolean;
 }
 interface BrokerItem {
@@ -33,6 +33,7 @@ id?: number;  user_id: string;
   profit: number;
   paid_company: boolean;
   date: string;
+  policy_start_date?: string;
   client_payment_type: "cash" | "installment";
   cash_date?: string;
   cash_method?: string;
@@ -93,27 +94,42 @@ export default function Home({
   const [newPolicyType, setNewPolicyType] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
- const filteredPolicies = useMemo(() => {
+const filteredPolicies = useMemo(() => {
   if (!selectedMonth) return policies;
 
+  const selected = parseInt(selectedMonth);
+
   return policies.filter((p) => {
-    // إذا البوليصة كاش
+    if (!isCompaniesPage) {
+      const dateStr = p.policy_start_date;
+      if (!dateStr) return false;
+
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return false;
+
+      return date.getMonth() + 1 === selected;
+    }
+
     if (!p.installments || p.installments.length === 0) {
       if (!p.cash_date) return false;
 
-      const month = new Date(p.cash_date).getMonth() + 1;
-      return month === parseInt(selectedMonth);
+      const date = new Date(p.cash_date);
+      if (isNaN(date.getTime())) return false;
+
+      return date.getMonth() + 1 === selected;
     }
 
-    // إذا البوليصة أقساط
     return p.installments.some((ins) => {
       if (!ins.due_date) return false;
 
-      const month = new Date(ins.due_date).getMonth() + 1;
-      return month === parseInt(selectedMonth);
+      const date = new Date(ins.due_date);
+      if (isNaN(date.getTime())) return false;
+
+      return date.getMonth() + 1 === selected;
     });
   });
-}, [policies, selectedMonth]);
+}, [policies, selectedMonth, isCompaniesPage]);
+
   const [editModal, setEditModal] = useState<Policy | null>(null);
   const [allClientNames, setAllClientNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,8 +142,10 @@ export default function Home({
   policy_num: "",
   policy_type: "",
   client_name: "",
+  start_date: "",
   insurance_company: "",
   broker_code: "",
+  policy_start_date: "",
   buy_price: 0,
   sell_price: 0,
   client_payment_type: "cash",
@@ -136,12 +154,10 @@ export default function Home({
   cash_receipt_num: "",
   installments_count: 0,
 });
-  const [formInstallments, setFormInstallments] = useState<
-    { date: string; method: string; receipt_num: string; amount: string }[]
-  >([
-    { date: "", method: "", receipt_num: "", amount: "" },
-    { date: "", method: "", receipt_num: "", amount: "" },
-  ]);
+const [formInstallments, setFormInstallments] = useState<
+  { index: number; date: string; method: string; receipt_num: string; amount: number }[]
+>([]);
+
 
 useEffect(() => {
   const firstDate = formInstallments[0]?.date;
@@ -220,92 +236,103 @@ const exportToExcel = (data: Policy[]) => {
   // =============================================
   // LOAD DATA FROM SUPABASE
   // =============================================
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      userIdRef.current = user.id;
-      const userId = user.id;
-const policiesUserId = userId;      // 1. policies
-      const { data: policiesData, error: policiesError } = await supabase
-        .from("policies")
-        .select("*")
-        .eq("user_id", policiesUserId);
-      if (!policiesError && policiesData) {
-      const pageType = isCompaniesPage ? "companies" : "clients";
+useEffect(() => {
+  async function loadData() {
+    setLoading(true);
 
-setPolicies(
-  policiesData
-    .filter((p) => p.data?.page === pageType)
-    .map((p) => ({
-      ...p.data,
-      id: p.id,
-    }))
-);;
-      } else {
-        setPolicies([]);
-      }
-      // 2. company policies (للـ autofill في صفحة الزبائن)
-      if (!isCompaniesPage) {
-        const { data: companyPoliciesData } = await supabase
-          .from("policies")
-          .select("*")
-.eq("user_id", userId)
-        if (companyPoliciesData) {
-          setCompanyPolicies(companyPoliciesData.map((p) => p.data as Policy));
-        }
-      }
-      
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-
-      // 3. company list
-      const { data: companiesData } = await supabase
-        .from("user_settings")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("key", "companies")
-        .single();
-      setCompanyList(companiesData?.value ?? []);
-      // 4. client names
-      const { data: clientsData } = await supabase
-        .from("user_settings")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("key", "clients")
-        .single();
-      setAllClientNames(clientsData?.value ?? []);
-      // 5. brokers
-      const { data: brokersData } = await supabase
-        .from("user_settings")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("key", "brokers")
-        .single();
-      setBrokers(brokersData?.value ?? []);
-      // 6. policy types
-      const { data: typesData } = await supabase
-        .from("user_settings")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("key", "policyTypes")
-        .single();
-      setPolicyTypes(typesData?.value ?? []);
+    if (!user) {
       setLoading(false);
-      const filtered = (policiesData ?? []).filter(
-  (p) => p.data.page === (isCompaniesPage ? "companies" : "clients")
-);
-setPolicies(
-  filtered.map((p) => ({
-    ...p.data,
-    id: p.id,
-  }))
-);
+      return;
     }
-    loadData();
-  }, [username, isCompaniesPage]);
+
+    userIdRef.current = user.id;
+    const userId = user.id;
+    const pageType = isCompaniesPage ? "companies" : "clients";
+
+    const { data: policiesData, error: policiesError } = await supabase
+      .from("policies")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("page", pageType)
+      .order("id", { ascending: false });
+
+    if (!policiesError && policiesData) {
+      setPolicies(
+        policiesData.map((p) => ({
+          ...p.data,
+          id: p.id,
+        }))
+      );
+    } else {
+      setPolicies([]);
+    }
+
+    const { data: companyPoliciesData } = await supabase
+      .from("policies")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("page", "companies")
+      .order("id", { ascending: false });
+
+    if (companyPoliciesData) {
+      setCompanyPolicies(
+        companyPoliciesData.map((p) => ({
+          ...p.data,
+          id: p.id,
+        }))
+      );
+    } else {
+      setCompanyPolicies([]);
+    }
+
+    const { data: companiesData } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("key", "companies")
+      .single();
+
+    setCompanyList(companiesData?.value ?? []);
+
+    const { data: clientsData } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("key", "clients")
+      .single();
+
+    setAllClientNames(clientsData?.value ?? []);
+
+    const { data: brokersData } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("key", "brokers")
+      .single();
+
+    setBrokers(brokersData?.value ?? []);
+
+    const { data: typesData } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("key", "policyTypes")
+      .single();
+
+    setPolicyTypes(typesData?.value ?? []);
+    setLoading(false);
+  }
+
+  loadData();
+}, [username, isCompaniesPage]);
+
+
+
+
   // =============================================
   // CONFIRM PASSWORD via Supabase Auth
   // =============================================
@@ -331,40 +358,49 @@ setPolicies(
   // =============================================
 async function saveData(updatedPolicies: Policy[]) {
   try {
-    setPolicies(updatedPolicies);
-
     const userId = userIdRef.current;
     const pageType = isCompaniesPage ? "companies" : "clients";
-
+    const pagePolicies = updatedPolicies.filter(
+      (p: any) => p.page === pageType
+    );
     const { error: deleteError } = await supabase
       .from("policies")
       .delete()
       .eq("user_id", userId)
-      .eq("data->>page", pageType);
-
+      .eq("page", pageType);
     if (deleteError) {
       console.error("DELETE ERROR:", deleteError);
-      return;
+      showMessage("❌ خطأ بحذف البيانات القديمة", "warning");
+      return false;
     }
-
-    const rows = updatedPolicies.map((p) => ({
-      user_id: userId,
-      data: p,
-    }));
-
+    if (pagePolicies.length === 0) {
+      return true;
+    }
+    const rows = pagePolicies.map((p: any) => {
+      const { id, ...policyData } = p;
+      return {
+        user_id: userId,
+        data: policyData,
+      };
+    });
     const { error: insertError } = await supabase
       .from("policies")
       .insert(rows);
-
     if (insertError) {
       console.error("INSERT ERROR:", insertError);
-      return;
+      showMessage("❌ خطأ بحفظ البيانات", "warning");
+      return false;
     }
-
+    return true;
   } catch (err) {
     console.error("SAVE FATAL ERROR:", err);
+    showMessage("❌ خطأ غير متوقع بالحفظ", "warning");
+    return false;
   }
 }
+
+
+
   // =============================================
   // SAVE SETTINGS TO SUPABASE
   // =============================================
@@ -423,6 +459,7 @@ async function saveData(updatedPolicies: Policy[]) {
       setNewPolicyType("");
       return;
     }
+    
     await savePolicyTypes([...policyTypes, name]);
     setNewPolicyType("");
   }
@@ -457,71 +494,77 @@ async function saveData(updatedPolicies: Policy[]) {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
   }
- function updateInstallmentsCount(count: number) {
+function updateInstallmentsCount(count: number) {
   const n = Math.max(1, Math.min(60, count || 1));
 
   const next = Array.from({ length: n }, (_, i) => {
     const old = formInstallments[i];
 
-
     return (
       old || {
+        index: i + 1,
         date: "",
         method: "",
         receipt_num: "",
-        amount: "",
+        amount: 0,
       }
     );
-  });
+  }).map((item, i) => ({
+    ...item,
+    index: i + 1,
+  }));
 
   setFormInstallments(next);
-  setForm({ ...form, installments_count: n });
+  setForm((prev) => ({ ...prev, installments_count: n }));
 }
-  function autofillFromCompanyPolicy(policyNum: string) {
-    if (isCompaniesPage) return;
-    const matched = companyPolicies.find(
-      (p) => p.policy_num.trim().toLowerCase() === policyNum.trim().toLowerCase()
-    );
-    if (!matched) return;
-    setForm((prev) => ({
-      ...prev,
-      policy_num: policyNum,
-      client_name: matched.client_name || "",
-      policy_type: matched.policy_type || "",
-      insurance_company: matched.insurance_company || "",
-      broker_code: matched.broker_code || "",
-    }));
-  }
+
+function autofillFromCompanyPolicy(policyNum: string) {
+  if (isCompaniesPage) return;
+
+  const matched = companyPolicies.find(
+    (p) => p.policy_num.trim().toLowerCase() === policyNum.trim().toLowerCase()
+  );
+
+  if (!matched) return;
+
+  setForm((prev) => ({
+    ...prev,
+    policy_num: policyNum,
+    client_name: matched.client_name || "",
+    policy_type: matched.policy_type || "",
+    insurance_company: matched.insurance_company || "",
+    broker_code: matched.broker_code || "",
+  }));
+}
+
+
   // =============================================
   // ADD POLICY
   // =============================================
- async function addPolicy() {
+async function addPolicy() {
   const currentPolicies = Array.isArray(policies) ? policies : [];
 
   const buy = Number(form.buy_price) || 0;
-const sell = Number(form.sell_price) || 0;
+  const sell = Number(form.sell_price) || 0;
   const profit = sell - buy;
 
-  if (!form.policy_num || !form.client_name)
-     {showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
+  if (!form.policy_num || !form.client_name) {
+    showMessage("يرجى ملء رقم البوليصة واسم العميل", "warning");
     return;
   }
-  
-const exists = policies.some(
-  (p) => p.policy_num === form.policy_num
-);
 
-if (exists) {
-  showMessage("⚠️ البوليصة موجودة مسبقاً", "warning");
-  return;
-}
-
-  const selectedBroker = brokers.find(
-    (b) => b.code === form.broker_code
+  const exists = currentPolicies.some(
+    (p) => p.policy_num.trim().toLowerCase() === form.policy_num.trim().toLowerCase()
   );
 
-  const newPolicy = {
-    page: isCompaniesPage ? "companies" : "clients",
+  if (exists) {
+    showMessage("⚠️ البوليصة موجودة مسبقاً", "warning");
+    return;
+  }
+
+  const selectedBroker = brokers.find((b) => b.code === form.broker_code);
+
+  const basePolicy: any = {
     user_id: userIdRef.current,
     policy_num: form.policy_num,
     client_name: form.client_name,
@@ -534,6 +577,7 @@ if (exists) {
     profit,
     paid_company: false,
     date: getTodayDMY(),
+    policy_start_date: form.policy_start_date,
     client_payment_type: form.client_payment_type as "cash" | "installment",
     ...(form.client_payment_type === "cash"
       ? {
@@ -549,59 +593,109 @@ if (exists) {
             payment_date: "",
             method: ins.method,
             receipt_num: ins.receipt_num,
-            amount: ins.amount,
+            amount: Number(ins.amount || 0),
             paid: false,
           })),
         }),
   };
 
   try {
-    const updated = [newPolicy, ...currentPolicies];
+    if (isCompaniesPage) {
+      const companyPolicy = {
+        ...basePolicy,
+        page: "companies",
+      };
 
-    await saveData(updated);
-    setPolicies(updated);
+      const clientPolicy = {
+        ...basePolicy,
+        page: "clients",
+      };
 
+      const updatedCompanies = [companyPolicy, ...currentPolicies];
+      const companiesSaved = await saveData(updatedCompanies);
+
+      if (!companiesSaved) return;
+
+      const { error: clientInsertError } = await supabase
+        .from("policies")
+        .insert([
+          {
+            user_id: userIdRef.current,
+            data: clientPolicy,
+          },
+        ]);
+
+      if (clientInsertError) {
+        console.error("CLIENT INSERT ERROR:", clientInsertError);
+        showMessage("⚠️ انحفظت بالشركات فقط، وفشل حفظ نسخة الزبائن", "warning");
+        return;
+      }
+
+      setPolicies(updatedCompanies);
+    } else {
+      const clientPolicy = {
+        ...basePolicy,
+        page: "clients",
+      };
+
+      const updatedClients = [clientPolicy, ...currentPolicies];
+      const clientsSaved = await saveData(updatedClients);
+
+      if (!clientsSaved) return;
+
+      setPolicies(updatedClients);
+    }
+
+    setForm({
+      policy_num: "",
+      policy_type: "",
+      client_name: "",
+      insurance_company: "",
+      broker_code: "",
+      policy_start_date: "",
+      start_date: "",
+      buy_price: 0,
+      sell_price: 0,
+      client_payment_type: "cash",
+      cash_date: "",
+      cash_method: "",
+      cash_receipt_num: "",
+      installments_count: 0,
+    });
+
+    setFormInstallments([]);
+    setClientSearch("");
+    setShowDialog(false);
+
+    showMessage("✅ تمت إضافة البوليصة", "success");
   } catch (err) {
-    console.error(err);
+    console.error("ADD POLICY ERROR:", err);
     showMessage("❌ خطأ بالحفظ", "warning");
-    return;
   }
-
-  setForm({
-    policy_num: "",
-  policy_type: "",
-  client_name: "",
-  insurance_company: "",
-  broker_code: "",
-  buy_price: 0,
-  sell_price: 0,
-  client_payment_type: "cash",
-  cash_date: "",
-  cash_method: "",
-  cash_receipt_num: "",
-  installments_count: 0,
-  });
-
-  setShowDialog(false);
-
-  showMessage("✅ تمت إضافة البوليصة", "success");
 }
+
+
+
   
   // =============================================
   // TOGGLE INSTALLMENT
   // =============================================
-  async function toggleInstallment(policyId: number, instIndex: number) {
+  async function toggleInstallment(policyNum: string, instIndex: number) {
     const updated = policies.map((p) =>  {
-      if (p.id !== policyId || !p.installments) return p;
+      if (p.policy_num !== policyNum || !p.installments) return p;
       const updatedInstallments = p.installments.map((ins) =>
         ins.index === instIndex ? { ...ins, paid: !ins.paid } : ins
       );
-      const anyPaid = updatedInstallments.some((ins) => ins.paid);
-      return { ...p, installments: updatedInstallments, paid_company: anyPaid };
+      const allPaid = updatedInstallments.every((ins) => ins.paid);
+return { ...p, installments: updatedInstallments, paid_company: allPaid };
+
     });
-    await saveData(updated);
-    setPaymentModal((prev) => {
-      if (!prev || prev.id !== policyId || !prev.installments) return prev;
+setPolicies(updated);
+
+await saveData(updated);
+
+setPaymentModal((prev) => {
+      if (!prev || prev.policy_num !== policyNum || !prev.installments) return prev;
       const updatedInstallments = prev.installments.map((ins) =>
         ins.index === instIndex ? { ...ins, paid: !ins.paid } : ins
       );
@@ -609,29 +703,45 @@ if (exists) {
       return { ...prev, installments: updatedInstallments, paid_company: anyPaid };
     });
   }
+
+
+
+  
   // =============================================
   // UPDATE INSTALLMENT FIELD
   // =============================================
   async function updateInstallmentField(
-    policyId: number,
+    policyNum: string,
     instIndex: number,
     field: "due_date" | "payment_date" | "method" | "receipt_num" | "amount",
-    value: string
+    value: string | number
   ) {
     const patchPolicy = (p: Policy): Policy => {
-      if (p.id !== policyId || !p.installments) return p;
+      if (p.policy_num !== policyNum || !p.installments) return p;
       const updated = p.installments.map((ins) => {
         if (ins.index !== instIndex) return ins;
-        const newIns = { ...ins, [field]: value };
-        newIns.paid = !!(newIns.payment_date && newIns.method);
+        const newValue =
+  field === "amount" ? Number(value) : value;
+
+const newIns = { ...ins, [field]: newValue };
+        newIns.paid = Boolean(
+  newIns.payment_date?.trim() &&
+  newIns.method?.trim() &&
+  Number(newIns.amount) > 0
+);
+
         return newIns;
       });
       const anyPaid = updated.some((ins) => ins.paid);
       return { ...p, installments: updated, paid_company: anyPaid };
     };
-    const newPolicies = policies.map(patchPolicy);
-    await saveData(newPolicies);
-    setPaymentModal((prev) => (prev ? patchPolicy(prev) : prev));
+const newPolicies = policies.map(patchPolicy);
+
+setPolicies(newPolicies);
+
+await saveData(newPolicies);
+
+setPaymentModal((prev) => (prev ? patchPolicy(prev) : prev));
   }
   // =============================================
   // DELETE POLICY (kept for future use)
@@ -652,7 +762,7 @@ if (exists) {
   // FILTER
   // =============================================
 const uniquePolicies = Array.from(
-  new Map(policies.map(p => [p.policy_num, p])).values()
+  new Map(filteredPolicies.map(p => [p.policy_num, p])).values()
 );
 
   const displayed = uniquePolicies.filter((p) => {
@@ -735,7 +845,7 @@ const printPaidValue = displayed.reduce((sum, p) => {
       sum +
       p.installments
         .filter((i) => i.paid)
-        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+        .reduce((s, i) => s + (i.amount || 0), 0)
     );
   }
 
@@ -748,32 +858,36 @@ const printPaidValue = displayed.reduce((sum, p) => {
 
 const printRemaining = printPolicyValue - printPaidValue;
 
-  displayed.forEach((p) => {
-    if (p.installments && p.installments.length > 0) {
-      const visibleInstallments = p.installments.filter((ins) => {
-        const isPaid = !!(ins.payment_date && ins.method);
-        if (paidFilter === "paid") return isPaid;
-        if (paidFilter === "unpaid") return !isPaid;
-        return true;
+displayed.forEach((p) => {
+  if (p.installments && p.installments.length > 0) {
+    const visibleInstallments = p.installments.filter((ins) => {
+      const isPaid = !!(ins.payment_date && ins.method);
+      if (paidFilter === "paid") return isPaid;
+      if (paidFilter === "unpaid") return !isPaid;
+      return true;
+    });
+
+    if (visibleInstallments.length > 0) {
+      totalBuy += Number(p.buy_price || 0);
+      totalSell += Number(p.sell_price || 0);
+
+      visibleInstallments.forEach((ins) => {
+        if (ins.method !== "ملغى") {
+          totalInstallments += Number(ins.amount || 0);
+        }
       });
-      if (visibleInstallments.length > 0) {
-        totalBuy += p.buy_price;
-        totalSell += p.sell_price;
-        visibleInstallments.forEach((ins) => {
-          if (ins.method !== "ملغى") {
-            totalInstallments += parseFloat(ins.amount || "0");
-          }
-        });
-      }
-    } else {
-      const isPaid = !!(p.cash_date && p.cash_method);
-      if (paidFilter === "paid" && !isPaid) return;
-      if (paidFilter === "unpaid" && isPaid) return;
-      totalBuy += p.buy_price;
-      totalSell += p.sell_price;
-      totalInstallments += p.sell_price;
     }
-  });
+
+  } else {
+    const isPaid = !!(p.cash_date && p.cash_method);
+    if (paidFilter === "paid" && !isPaid) return;
+    if (paidFilter === "unpaid" && isPaid) return;
+
+    totalBuy += Number(p.buy_price || 0);
+    totalSell += Number(p.sell_price || 0);
+    totalInstallments += Number(p.sell_price || 0);
+  }
+});
   if (loading) {
     return (
       <div dir="rtl" style={{ fontFamily: "system-ui", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -789,7 +903,7 @@ const printRemaining = printPolicyValue - printPaidValue;
           <button onClick={logout} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "8px 14px", color: "white", cursor: "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: "bold" }}>🚪 خروج</button>
           <div style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "8px 14px", color: "white", fontSize: 12, fontWeight: "bold", textAlign: "center" }}>👤 {username.slice(0, 8)}...</div>
         </div>
-                <div
+        <div
   style={{
     display: "flex",
     alignItems: "center",
@@ -807,10 +921,10 @@ const printRemaining = printPolicyValue - printPaidValue;
     SIGMA
   </h1>
   <img
-    src="/logosigma.png" // حط اسم ومسار الصورة هون
-    alt="logo"
-    style={{ width: 45, height: 45, marginRight: 8 }}
-  />
+  src="/logosigma.png"
+  alt="logo"
+  style={{ width: 45, height: 45, marginRight: 8 }}
+/>
 
  
 </div>
@@ -940,6 +1054,17 @@ const printRemaining = printPolicyValue - printPaidValue;
 </div>
 
             <div id="print-table" className={isCompaniesPage ? "companies-print" : "clients-print"} style={{ overflowX: "auto" }}>
+              
+              <div className="print-header">
+               <div className="print-date">
+                 Date: {new Date().toLocaleDateString()}
+               </div>
+             </div>
+             <div id="print-summary">
+               SIGMA INSURANCE
+              / كشف حساب
+             </div>
+              
               <div id="print-title" style={{ display: "none" }}>🏢 Insurance Pro — {isCompaniesPage ? "صفحة الشركات" : "صفحة الزبائن"}</div>
               <div id="print-summary" style={{ display: "none" }}>
                 {searchText.trim() && <div className="print-meta-line">🔍 {getPrintSearchLabel()}</div>}
@@ -951,8 +1076,8 @@ const printRemaining = printPolicyValue - printPaidValue;
   
                 <thead>
                   <tr>
-                    {["رقم البوليصة", "العميل", "نوع", "شركة", "سعر الشراء", "سعر البيع", "رقم القسط", "القسط", "تاريخ الاستحقاق", "تاريخ الدفع", "طريقة الدفع", "رقم الواصل", "مدفوع", "Broker"].map((h) => (
-                      <th key={h} style={{ background: "linear-gradient(45deg,#2196F3,#1976D2)", color: "white", padding: "11px 18px", fontWeight: "bold", fontSize: "0.8em", whiteSpace: "nowrap" }}>
+                    {["رقم البوليصة", "العميل", "نوع", "شركة", " تاريخ الإصدار","سعر الشراء", "سعر البيع", "رقم القسط", "القسط", "تاريخ الاستحقاق", "تاريخ الدفع", "طريقة الدفع", "رقم الواصل", "مدفوع", "Broker"].map((h) => (
+                      <th key={h} style={{ background: "linear-gradient(45deg,#2196F3,#1976D2)", color: "white", padding: "10px 15px", fontWeight: "bold", fontSize: "0.75em", whiteSpace: "nowrap" }}>
                         {h}
                       </th>
                     ))}
@@ -962,11 +1087,22 @@ const printRemaining = printPolicyValue - printPaidValue;
                   {displayed.flatMap((p, i) => {
                     const rows: React.ReactNode[] = [];
                     if (p.installments && p.installments.length > 0) {
-                      const filteredInstallments = p.installments.filter((ins) => {
+const filteredInstallments = p.installments.filter((ins) => {
   if (!selectedMonth) return true;
 
-  const date = new Date(ins.due_date || ins.payment_date);
-  return date.getMonth() + 1 === Number(selectedMonth);
+  if (!isCompaniesPage && !p.policy_start_date) return false;
+
+  const rawDate = isCompaniesPage
+    ? (ins.due_date ?? ins.payment_date)
+    : p.policy_start_date;
+
+  const date = rawDate ? new Date(rawDate) : null;
+
+  return (
+    date &&
+    !isNaN(date.getTime()) &&
+    date.getMonth() + 1 === Number(selectedMonth)
+  );
 });
                       filteredInstallments.forEach((ins, idx) => {
                         const isPaid = !!(ins.payment_date && ins.method);
@@ -982,10 +1118,15 @@ const printRemaining = printPolicyValue - printPaidValue;
                             <td style={tdStyle}>
                               {p.insurance_company ? <span style={{ background: "#F3E5F5", color: "#6A1B9A", borderRadius: 5, padding: "2px 7px", fontSize: "0.8em", fontWeight: "bold" }}>{p.insurance_company}</span> : <span style={{ color: "#bbb" }}>—</span>}
                             </td>
-                            <td style={tdStyle}>${p.buy_price.toFixed(2)}</td>
-                            <td style={tdStyle}>${p.sell_price.toFixed(2)}</td>
+                            <td style={tdStyle}>
+                              {p.policy_start_date ? formatDateDMY(p.policy_start_date) : "-"}
+                            </td>
+                            <td style={tdStyle}>${Number(p.buy_price || 0).toFixed(2)}</td>
+                            <td style={tdStyle}>${Number(p.sell_price || 0).toFixed(2)}</td>
                             <td style={tdStyle}>{ins.index}/{p.installments_count}</td>
-                            <td style={tdStyle}>${parseFloat(ins.amount || "0").toFixed(2)}</td>
+                            <td style={tdStyle}>
+  ${Number(ins.amount || 0).toFixed(2)}
+</td>
                             <td style={tdStyle}>{formatDateDMY(ins.due_date)}</td>
                             <td style={tdStyle}>
                               <DatePicker
@@ -995,25 +1136,25 @@ const printRemaining = printPolicyValue - printPaidValue;
                                     const y = date.getFullYear();
                                     const m = String(date.getMonth() + 1).padStart(2, "0");
                                     const d = String(date.getDate()).padStart(2, "0");
-                                    updateInstallmentField(p.id ?? 0, ins.index, "payment_date", `${y}-${m}-${d}`);
+                                    updateInstallmentField(p.policy_num, ins.index, "payment_date", `${y}-${m}-${d}`);
                                   } else {
-                                    updateInstallmentField(p.id ?? 0, ins.index, "payment_date", "");
+                                    updateInstallmentField(p.policy_num, ins.index, "payment_date", "");
                                   }
                                 }}
                                 dateFormat="dd-MM-yyyy"
                                 placeholderText="dd-mm-yyyy"
-                                customInput={<input style={{ width: "110%", textAlign: "center", border: "1px solid #ddd", borderRadius: "4px" }} />}
+                                customInput={<input style={{ width: "100%", textAlign: "center", border: "0px solid #ddd", borderRadius: "4px" }} />}
                               />
                             </td>
                             <td style={tdStyle}>
                               {ins.method === "ملغى" ? (
                                 <span style={{ color: "#999", fontWeight: "bold" }}>ملغى</span>
                               ) : (
-                                <input type="text" value={ins.method || ""} onChange={(e) => updateInstallmentField(p.id ?? 0, ins.index, "method", e.target.value)} placeholder="طريقة الدفع" style={{ width: "100%" }} />
+                                <input type="text" value={ins.method || ""} onChange={(e) => updateInstallmentField(p.policy_num, ins.index, "method", e.target.value)} placeholder="طريقة الدفع" style={{ width: "100%" }} />
                               )}
                             </td>
                             <td style={tdStyle}>
-                              <input type="text" value={ins.receipt_num || ""} onChange={(e) => updateInstallmentField(p.id ?? 0, ins.index, "receipt_num", e.target.value)} placeholder="رقم الواصل" style={{ width: "100%" }} />
+                              <input type="text" value={ins.receipt_num || ""} onChange={(e) => updateInstallmentField(p.policy_num, ins.index, "receipt_num", e.target.value)} placeholder="رقم الواصل" style={{ width: "100%" }} />
                             </td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
@@ -1046,7 +1187,7 @@ const printRemaining = printPolicyValue - printPaidValue;
                                         sell_price: 0,
                                         profit: 0,
                                         installments_count: 1,
-                                        installments: [{ index: 1, due_date: ins.due_date, payment_date: today, method: "ملغى", receipt_num: "", amount: "0", paid: true }],
+                                        installments: [{ index: 1, due_date: ins.due_date, payment_date: today, method: "ملغى", receipt_num: "", amount: 0, paid: true }],
                                       };
                                     });
                                     await saveData(updated);
@@ -1073,10 +1214,12 @@ const printRemaining = printPolicyValue - printPaidValue;
                           <td style={tdStyle}>
                             {p.insurance_company ? <span style={{ background: "#F3E5F5", color: "#6A1B9A", borderRadius: 5, padding: "2px 7px", fontSize: "0.8em", fontWeight: "bold" }}>{p.insurance_company}</span> : <span style={{ color: "#bbb" }}>—</span>}
                           </td>
-                          <td style={tdStyle}>${p.buy_price.toFixed(2)}</td>
-                          <td style={tdStyle}>${p.sell_price.toFixed(2)}</td>
+                          <td style={tdStyle}>
+                              {p.policy_start_date ? formatDateDMY(p.policy_start_date) : "-"}
+                          </td>
+                          <td style={tdStyle}>${Number(p.buy_price || 0).toFixed(2)}</td>
+                          <td style={tdStyle}>${Number(p.sell_price || 0).toFixed(2)}</td>
                           <td style={tdStyle}>1/1</td>
-                          <td style={tdStyle}>${p.sell_price.toFixed(2)}</td>
                           <td style={tdStyle}>{formatDateDMY(p.cash_date)}</td>
                           <td style={tdStyle}>{formatDateDMY(p.cash_date)}</td>
                           <td style={tdStyle}>{p.cash_method || "-"}</td>
@@ -1117,29 +1260,37 @@ const printRemaining = printPolicyValue - printPaidValue;
                     return rows;
                   })}
                   {/* صف المجموع للشاشة */}
-                  <tr className="clients-total-row normal-total-row" style={{ background: "#fff3cd", fontWeight: "bold" }}>
-                    <td colSpan={4}>المجموع</td>
-                    <td className="total-buy-cell">${totalBuy.toFixed(2)}</td>
-                    <td className="total-sell-cell">${totalSell.toFixed(2)}</td>
-                    <td></td>
-                    <td className="total-installments">${totalInstallments.toFixed(2)}</td>
-                    <td colSpan={6}></td>
-                  </tr>
+<tr className="clients-total-row normal-total-row" style={{ background: "#fff3cd", fontWeight: "bold" }}>
+  <td colSpan={5}>المجموع</td>
+  <td className="total-buy-cell">${totalBuy.toFixed(2)}</td>
+  <td className="total-sell-cell">${totalSell.toFixed(2)}</td>
+  <td></td>
+  <td className="total-installments">${Number(totalInstallments || 0).toFixed(2)}</td>
+  <td colSpan={6}></td>
+</tr>
+
                   {/* صف المجموع للطباعة */}
-                  <tr className="print-only-total-row" style={{ background: "#fff3cd", fontWeight: "bold", display: "none" }}>
-                    <td colSpan={4}>المجموع</td>
-                    <td></td>
-                    <td className="total-installments">${totalInstallments.toFixed(2)}</td>
-                    <td colSpan={5}></td>
-                  </tr>
+<tr className="print-only-total-row" style={{ background: "#fff3cd", fontWeight: "bold", display: "none" }}>
+  <td colSpan={5}>المجموع</td>
+  <td className="total-buy-cell">${totalBuy.toFixed(2)}</td>
+  <td className="total-sell-cell">${totalSell.toFixed(2)}</td>
+  <td></td>
+  <td className="total-installments">${Number(totalInstallments || 0).toFixed(2)}</td>
+  <td colSpan={6}></td>
+</tr>
+
                 </tbody>
               </table>
+
               <div className="print-only-footer">
-  💰 قيمة البوليصة: ${printPolicyValue.toFixed(2)} <br />
-  💵 قيمة الدفعات: ${printPaidValue.toFixed(2)} <br />
-  📉 الباقي: ${printRemaining.toFixed(2)}
+  💰 قيمة البوليصة: ${Number(printPolicyValue || 0).toFixed(2)} <br />
+  💵 قيمة الدفعات: ${Number(printPaidValue || 0).toFixed(2)} <br />
+  📉 الباقي: ${Number(printRemaining || 0).toFixed(2)}
 </div>
+
             </div>
+            
+
             
           </>
           
@@ -1160,6 +1311,7 @@ const printRemaining = printPolicyValue - printPaidValue;
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
                 <label style={labelStyle}>رقم البوليصة *</label>
+                
                 <input type="text" value={form?.policy_num || ""}onChange={(e) => {
   const value = e.target.value;
 
@@ -1187,6 +1339,29 @@ try {
                   <div style={{ color: "#aaa", fontSize: 12 }}>أضف أنواع من زر الإدارة</div>
                 )}
               </div>
+              <div>
+  <label style={labelStyle}>📅 تاريخ الإصدار</label>
+
+  <DatePicker
+    selected={form.policy_start_date ? new Date(form.policy_start_date + "T00:00:00") : null}
+    onChange={(date: Date | null) => {
+      if (date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+
+        setForm((prev) => ({
+  ...(prev || {}),
+  policy_start_date: `${y}-${m}-${d}`,
+}));
+      }
+    }}
+    dateFormat="dd-MM-yyyy"
+    placeholderText="dd-mm-yyyy"
+    customInput={<input style={fieldStyle} />}
+  />
+</div>
+
               <div style={{ position: "relative" }}>
                 <label style={labelStyle}>اسم العميل *</label>
                 <input type="text" value={clientSearch || form?.client_name || ""} onChange={(e) => { setClientSearch(e.target.value); setForm((prev) => ({
@@ -1196,7 +1371,7 @@ try {
                 {clientSearch && filteredClients.length > 0 && (
                   <div style={{ position: "absolute", top: "100%", right: 0, left: 0, background: "white", border: "1px solid #ddd", borderRadius: 8, maxHeight: 150, overflowY: "auto", zIndex: 1000 }}>
                     {filteredClients.map((name) => (
-                      <div key={name} onClick={() => { setForm({ ...form, client_name: name }); setClientSearch(""); }} style={{ padding: 10, cursor: "pointer", borderBottom: "1px solid #eee" }}>{name}</div>
+                      <div key={name} onClick={() => { setForm((prev) => ({ ...prev, client_name: name })); setClientSearch(""); }} style={{ padding: 10, cursor: "pointer", borderBottom: "1px solid #eee" }}>{name}</div>
                     ))}
                   </div>
                 )}
@@ -1209,7 +1384,7 @@ try {
   insurance_company: e.target.value
 }))} style={{ ...fieldStyle, background: "white" }}>
                     <option value="">— اختر الشركة —</option>
-                    {companyList.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {(companyList || []).map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 ) : (
                   <div style={{ color: "#aaa", fontSize: 12 }}>ما في شركات بعد</div>
@@ -1239,7 +1414,7 @@ try {
             </div>
             {typeof form.buy_price === "number" && typeof form.sell_price === "number" && (
               <div style={{ background: "#f0f9f0", borderRadius: 8, padding: "8px 12px", marginBottom: 14, textAlign: "center", fontWeight: "bold", color: "#4CAF50", fontSize: "0.9em" }}>
-                الربح المتوقع: ${(form.sell_price - form.buy_price).toFixed(2)}
+                الربح المتوقع: ${((Number(form.sell_price) || 0) - (Number(form.buy_price) || 0)).toFixed(2)}
               </div>
             )}
             <div style={{ marginBottom: 14 }}>
@@ -1268,7 +1443,7 @@ try {
                         }
                       }}
                       dateFormat="dd-MM-yyyy"
-                      customInput={<input style={{ ...fieldStyle, padding: "11px 16px", fontSize: 14 }} />}
+                      customInput={<input style={{ ...fieldStyle, padding: "10px 15px", fontSize: 12 }} />}
                       placeholderText="dd-mm-yyyy"
                     />
                   </div>
@@ -1287,7 +1462,9 @@ try {
               <div style={{ background: "#f8f9ff", border: "1px solid #bbdefb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
                 <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>عدد الأقساط</label>
-                  <input type="number" min="1" max="60" value={form.installments_count} onChange={(e) => updateInstallmentsCount(parseInt(e.target.value || "0"))} style={{ ...fieldStyle, width: "120px" }} />
+                  <input type="number" min="1" max="60" value={form.installments_count} onChange={(e) =>
+  updateInstallmentsCount(Number(e.target.value))
+} style={{ ...fieldStyle, width: "120px" }} />
                 </div>
                 <div style={{ maxHeight: 280, overflowY: "auto" }}>
                   {formInstallments.map((ins, i) => (
@@ -1295,7 +1472,9 @@ try {
                       <div style={{ fontWeight: "bold", color: "#2196F3", fontSize: "0.83em", marginBottom: 6 }}>قسط {i + 1}</div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
                         <DatePicker
-                          selected={ins.date ? new Date(ins.date) : null}
+                          selected={
+  ins.date ? new Date(ins.date + "T00:00:00") : null
+}
                           onChange={(date: Date | null) => {
                             if (date) {
                               const y = date.getFullYear();
@@ -1312,7 +1491,7 @@ try {
                         />
                         <input type="number" value={ins.amount || ""} onChange={(e) => {
   const next = [...formInstallments];
-  next[i] = { ...next[i], amount: e.target.value };
+  next[i] = { ...next[i], amount: Number(e.target.value) || 0 };
   setFormInstallments(next);
 }}  placeholder="المبلغ $" style={{ ...fieldStyle, padding: "7px 8px", fontSize: 11 }} />
                       </div>
@@ -1324,6 +1503,7 @@ try {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <button onClick={addPolicy} style={{ padding: "13px", background: "linear-gradient(45deg,#4CAF50,#45a049)", color: "white", border: "none", borderRadius: 12, fontSize: 15, fontWeight: "bold", cursor: "pointer" }}>✅ حفظ</button>
               <button onClick={() => setShowDialog(false)} style={{ padding: "13px", background: "linear-gradient(45deg,#607D8B,#455A64)", color: "white", border: "none", borderRadius: 12, fontSize: 15, fontWeight: "bold", cursor: "pointer" }}>❌ إلغاء</button>
+            
             </div>
           </div>
         </div>
@@ -1342,6 +1522,64 @@ try {
             <input type="text" value={editModal.policy_type || ""} onChange={(e) => setEditModal({ ...editModal, policy_type: e.target.value })} style={inputStyle} />
             <label style={labelStyle}>🏦 شركة التأمين</label>
             <input type="text" value={editModal.insurance_company || ""} onChange={(e) => setEditModal({ ...editModal, insurance_company: e.target.value })} style={inputStyle} />
+            <label style={labelStyle}>📅 تاريخ الإصدار</label>
+
+<input
+  type="date"
+  value={editModal.policy_start_date || ""}
+  onChange={(e) =>
+    setEditModal({
+      ...editModal,
+      policy_start_date: e.target.value
+    })
+  }
+  style={inputStyle}
+/>
+
+<label style={labelStyle}>💳 نوع الدفع</label>
+
+<select
+  value={editModal.client_payment_type || ""}
+  onChange={(e) =>
+    setEditModal({
+      ...editModal,
+      client_payment_type: e.target.value as "cash" | "installment"
+    })
+  }
+  style={inputStyle}
+>
+  <option value="">اختر</option>
+  <option value="cash">💵 نقدي</option>
+  <option value="installment">📅 تقسيط</option>
+</select>
+
+<label style={labelStyle}>🧾 رقم الواصل</label>
+
+<input
+  type="text"
+  value={editModal.cash_receipt_num || ""}
+  onChange={(e) =>
+    setEditModal({
+      ...editModal,
+      cash_receipt_num: e.target.value
+    })
+  }
+  style={inputStyle}
+/>
+
+<label style={labelStyle}>🏦 طريقة الدفع</label>
+
+<input
+  type="text"
+  value={editModal.cash_method || ""}
+  onChange={(e) =>
+    setEditModal({
+      ...editModal,
+      cash_method: e.target.value
+    })
+  }
+  style={inputStyle}
+/>
             <label style={labelStyle}>👔 Broker</label>
             <select value={editModal.broker_code || ""} onChange={(e) => { const b = brokers.find((b) => b.code === e.target.value); setEditModal({ ...editModal, broker_code: b?.code || "", broker_name: b?.name || "" }); }} style={inputStyle}>
               <option value="">— اختر الوسيط —</option>
@@ -1369,7 +1607,7 @@ try {
                         }} />
                         <input type="number" value={ins.amount || ""} onChange={(e) => {
                           const updated = [...(editModal.installments || [])];
-                          updated[i] = { ...updated[i], amount: String(e.target.value) };
+                          updated[i] = { ...updated[i], amount: Number(e.target.value) || 0 };
                           setEditModal({ ...editModal, installments: updated });
                         }} placeholder="المبلغ" />
                         <input type="text" value={ins.method || ""} onChange={(e) => {
@@ -1389,16 +1627,42 @@ try {
               </div>
             )}
             <div style={{ display: "flex", gap: 10, marginTop: 15 }}>
-              <button onClick={async () => {
-                const updated = (filteredPolicies || []).map((p) => p.id === editModal.id ? editModal : p);
-                await saveData(updated);
-                const trimmedClientName = editModal.client_name.trim();
-                if (trimmedClientName && !allClientNames.includes(trimmedClientName)) {
-                  await saveClientNames([...allClientNames, trimmedClientName]);
-                }
-                setEditModal(null);
-                showMessage("✅ تم حفظ التعديلات", "success");
-              }} style={{ flex: 1, padding: 10, background: "#4CAF50", color: "white", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: "bold" }}>💾 حفظ</button>
+<button
+onClick={async () => {
+  const updated = policies.map((p) =>
+    p.id === editModal.id
+      ? {
+          ...p,
+          ...editModal,
+          profit: Number(editModal.sell_price) - Number(editModal.buy_price),
+          paid_company:
+            editModal.client_payment_type === "cash"
+              ? !!(editModal.cash_date && editModal.cash_method)
+              : (editModal.installments || []).some((i) => i.paid),
+          page: isCompaniesPage ? "companies" : "clients",
+        }
+      : p
+  );
+
+  await saveData(updated);
+  setPolicies(updated);
+
+  const trimmed = editModal.client_name.trim();
+  if (trimmed && !allClientNames.includes(trimmed)) {
+    await saveClientNames([...allClientNames, trimmed]);
+  }
+
+  setEditModal(null);
+  showMessage("✅ تم حفظ التعديلات", "success");
+}}
+
+  style={{ flex: 1, padding: 10, background: "#4CAF50", color: "white", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: "bold" }}
+>
+  💾 حفظ
+</button>
+
+
+
               <button onClick={() => setEditModal(null)} style={{ flex: 1, padding: 10, background: "#777", color: "white", border: "none", borderRadius: 10, cursor: "pointer" }}>❌ إلغاء</button>
             </div>
           </div>
@@ -1416,8 +1680,8 @@ try {
             {(() => {
               const insts = paymentModal.installments || [];
               const paidInsts = insts.filter((i) => i.paid);
-              const totalPaid = paidInsts.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-              const totalAll = insts.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+              const totalPaid = paidInsts.reduce((s, i) => s + (i.amount || 0), 0);
+              const totalAll = insts.reduce((s, i) => s + (i.amount || 0), 0);
               const remaining = remainingInstallments(paymentModal);
 
               return (
@@ -1434,7 +1698,7 @@ try {
                 <div key={ins.index} style={{ marginBottom: 10, background: ins.paid ? "#f0fff0" : "#fff8f8", borderRadius: 12, border: `1px solid ${ins.paid ? "#c8e6c9" : "#ffcdd2"}`, padding: "10px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontWeight: "bold", color: "#2196F3", fontSize: "0.88em" }}>قسط {ins.index}</span>
-                    <button onClick={() => toggleInstallment(paymentModal?.id ?? 0, ins.index)} style={{ padding: "5px 14px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: "0.8em", fontWeight: "bold", fontFamily: "inherit", background: ins.paid ? "#FF9800" : "#4CAF50", color: "white" }}>
+                    <button onClick={() => toggleInstallment(paymentModal?.policy_num || "", ins.index)} style={{ padding: "5px 14px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: "0.8em", fontWeight: "bold", fontFamily: "inherit", background: ins.paid ? "#FF9800" : "#4CAF50", color: "white" }}>
                       {ins.paid ? "↩ إلغاء" : "✅ مدفوع"}
                     </button>
                   </div>
@@ -1443,7 +1707,7 @@ try {
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>📅 التاريخ</div>
                       <input type="date" value={ins.payment_date || ""}onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
   updateInstallmentField(
-    paymentModal?.id ?? 0,
+  paymentModal?.policy_num || "",
     ins.index,
     "payment_date",
     e.target.value
@@ -1453,8 +1717,8 @@ try {
                     <div>
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>🏦 الطريقة</div>
                       <input type="text" value={ins.method || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-  updateInstallmentField(
-    paymentModal?.id ?? 0,
+updateInstallmentField(
+  paymentModal?.policy_num || "",
     ins.index,
     "method",
     e.target.value
@@ -1465,7 +1729,7 @@ try {
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>🧾 رقم الواصل</div>
                       <input type="text" value={ins.receipt_num || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
   updateInstallmentField(
-    paymentModal?.id ?? 0,
+  paymentModal?.policy_num || "",
     ins.index,
     "receipt_num",
     e.target.value
@@ -1476,7 +1740,7 @@ try {
                       <div style={{ fontSize: "0.7em", color: "#888", marginBottom: 3 }}>💵 المبلغ</div>
                       <input type="number" value={ins.amount || ""} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
   updateInstallmentField(
-    paymentModal?.id ?? 0,
+  paymentModal?.policy_num || "",
     ins.index,
     "amount",
     String(e.target.value)
@@ -1505,7 +1769,7 @@ try {
               {companyList.length === 0 ? (
                 <div style={{ textAlign: "center", color: "#bbb", padding: 20 }}>لا توجد شركات بعد</div>
               ) : (
-                companyList.map((name) => (
+                (companyList || []).map((name) => (
                   <div key={name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 7, background: "#f0f7ff", borderRadius: 10, border: "1px solid #bbdefb" }}>
                     <span style={{ fontWeight: "bold", color: "#0f3460", fontSize: "0.93em" }}>🏦 {name}</span>
                     <button onClick={() => deleteCompanyFromList(name)} style={{ background: "#FFEBEE", color: "#C62828", border: "none", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>🗑️</button>
@@ -1545,6 +1809,8 @@ try {
           onClick={(e) => { if (e.target === e.currentTarget) setShowBrokerManager(false); }}>
           <div dir="rtl" style={{ background: "white", borderRadius: 20, padding: 28, width: "100%", maxWidth: 450 }}>
             <h2 style={{ textAlign: "center", marginBottom: 18 }}>👔 إدارة الوسطاء</h2>
+            
+            
             <div
   style={{
     display: "grid",
@@ -1598,90 +1864,256 @@ try {
 
       {/* ===================== PRINT STYLES ===================== */}
       <style>{`
-      .print-only-footer {
-  display: none !important;
-}
-        @media print {
-          body * { visibility: hidden !important; }
-          #print-table, #print-table * { visibility: visible !important; }
-          #print-table {
-              position: absolute;
- top: 0;
-  right: 0;
-            transform: scale(0.5);   /* 👈 نفس 50% */
-    transform-origin: top right;
-    width: 200%; /* 👈 تعويض التصغير */
-            padding: 7px;
-            background: white;
-            direction: rtl;
-            font-family: system-ui, sans-serif;
-          }
 
+@page {
+  size: A4 landscape;
+  margin: 0.5mm;
+}
 
 .print-only-footer {
-  display: block !important;
-  margin-top: 15px;
-  text-align: center;
-  font-size: 14px;
-  background: #f0f0f0;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid #ddd;
+  display: none;
 }
 
-     #print-table table {
-  width: auto !important;
-  border-collapse: collapse;
-  font-size: 12px;
+#print-summary {
+  display: none;
 }
 
-          #print-table th {
-            background: #2196F3 !important;
-            color: white !important;
-            padding: 8px 6px;
-            font-weight: bold;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
+@media print {
 
-          #print-table td {
-             padding: 6px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-          }
+  body * {
+    visibility: hidden !important;
+  }
 
-          #print-table tr:nth-child(even) td {
-            background: #f9f9f9;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          #print-table .no-print { display: none !important; }
-          #print-title { display: none !important; }
-          #print-summary {
-            display: block !important;
-            font-size: 14px;
-            text-align: center;
-            margin-bottom: 15px;
-            color: #333;
-            font-weight: bold;
-            background: #f0f0f0;
-            padding: 8px;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-          }
-          #print-summary .print-meta-line { margin: 5px 0; color: #444; }
-          .clients-print th:nth-child(5),
-          .clients-print th:nth-child(6),
-          .clients-print td:nth-child(5),
-          .clients-print td:nth-child(6) { display: none !important; }
-          .clients-print .normal-total-row { display: none !important; }
-          .clients-print .print-only-total-row { display: table-row !important; }
-          .clients-print .total-installments { display: table-cell !important; font-weight: bold; }
-          #print-table th:nth-child(14),
-          #print-table td:nth-child(14) { display: none !important; }
-        }
+  #print-table,
+  #print-table * {
+    visibility: visible !important;
+  }
+@media print {
+  #print-table {
+    overflow: visible !important;
+  }
+}
+
+  #print-table {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    background: white;
+    direction: rtl;
+    font-family: Arial, sans-serif;
+    color: #000;
+    padding: 10px;
+  }
+
+  /* HEADER */
+
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+  }
+
+  .print-company {
+    font-size: 24px;
+    font-weight: bold;
+  }
+
+  .print-date {
+    font-size: 14px;
+  }
+
+  /* SUMMARY */
+
+  #print-summary {
+    display: block !important;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    padding: 8px;
+    border-radius: 8px;
+    background: #f7f7f7;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  /* TABLE */
+
+  #print-table table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+  }
+
+  #print-table th {
+    background: #222 !important;
+    color: white !important;
+    padding: 10px 6px;
+    border: 1px solid #000;
+    font-size: 13px;
+    text-align: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #print-table td {
+    border: 1px solid #999;
+    padding: 7px 5px;
+    font-size: 12px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  #print-table tr:nth-child(even) td {
+    background: #f3f3f3 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* TOTAL ROW */
+
+  .print-total-row td {
+    font-weight: bold;
+    background: #ddd !important;
+  }
+
+  /* FOOTER */
+
+  .print-only-footer {
+    display: block !important;
+    margin-top: 40px;
+  }
+
+  .footer-signatures {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 50px;
+  }
+
+  .signature-box {
+    width: 200px;
+    text-align: center;
+  }
+
+@media print {
+
+  /* تصغير عمود تاريخ الدفع (العمود رقم 11) ليصير مثل عمود تاريخ الاستحقاق */
+  #print-table td:nth-child(11),
+  #print-table th:nth-child(11) {
+    width: 90px !important;
+    max-width: 90px !important;
+    min-width: 90px !important;
+  }
+
+  /* تصغير حجم الـ input داخل العمود رقم 11 فقط */
+  #print-table td:nth-child(11) input {
+    width: 80px !important;
+    padding: 2px 4px !important;
+    font-size: 14px !important;
+    height: 20px !important;
+  }
+
+  #print-table td:nth-child(12),
+  #print-table th:nth-child(12) {
+    width: 120px !important;
+    max-width: 120px !important;
+    min-width: 120px !important;
+  }
+
+  /* تصغير حجم الـ input داخل العمود رقم 12 فقط */
+  #print-table td:nth-child(12) input {
+    width: 110px !important;
+    padding: 2px 4px !important;
+    font-size: 14px !important;
+    height: 20px !important;
+  }
+
+  #print-table td:nth-child(13),
+  #print-table th:nth-child(13) {
+    width: 120px !important;
+    max-width: 120px !important;
+    min-width: 120px !important;
+  }
+
+  /* تصغير حجم الـ input داخل العمود رقم 13 فقط */
+  #print-table td:nth-child(13) input {
+    width: 110px !important;
+    padding: 2px 4px !important;
+    font-size: 14px !important;
+    height: 20px !important;
+  }
+
+}
+
+
+
+  .signature-line {
+    border-top: 1px solid #000;
+    margin-top: 60px;
+    padding-top: 5px;
+  }
+
+  /* HIDE */
+
+  .no-print,
+  #print-title {
+    display: none !important;
+  }
+
+/* اخفاء سعر الشراء والبيع */
+
+.clients-print th:nth-child(6),
+.clients-print th:nth-child(7),
+.clients-print td:nth-child(6),
+.clients-print td:nth-child(7) {
+  display: none !important;
+}
+
+/* اخفاء صف المجموع العادي */
+
+.clients-print .normal-total-row {
+  display: none !important;
+}
+
+@media print {
+  .clients-print td:nth-child(9),
+  .clients-print th:nth-child(9) {
+    display: none !important;
+  }
+}
+@media print {
+  .clients-print .total-sell-cell {
+    display: none !important;
+  }
+}
+@media print {
+  .clients-print .total-buy-cell {
+    display: none !important;
+  }
+}
+
+/* اظهار صف المجموع الخاص بالطباعة */
+
+.clients-print .print-only-total-row {
+  display: table-row !important;
+}
+
+/* اظهار مجموع الاقساط */
+
+.clients-print .total-installments {
+  display: table-cell !important;
+  font-weight: bold;
+}
+
+/* اخفاء العمود 14 */
+
+#print-table th:nth-child(15),
+#print-table td:nth-child(15) {
+  display: none !important;
+}
+
       `}</style>
     </div>
   );
