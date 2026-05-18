@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-
 interface LoginProps {
   onLogin: (username: string) => void;
 }
-
 type Mode = "login" | "register";
-
 export default function Login({ onLogin }: LoginProps) {
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
@@ -15,88 +12,69 @@ export default function Login({ onLogin }: LoginProps) {
   const [error, setError] = useState("");
   const [shaking, setShaking] = useState(false);
   const [loading, setLoading] = useState(false);
-
   function triggerError(msg: string) {
     setError(msg);
     setShaking(true);
     setTimeout(() => setShaking(false), 500);
     setTimeout(() => setError(""), 4000);
   }
-
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-
     const trimUser = username.trim();
     const trimPass = password.trim();
-
     if (!trimUser || !trimPass) {
       triggerError("يرجى ملء جميع الحقول");
       return;
     }
-
     setLoading(true);
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: trimUser,
       password: trimPass,
     });
-
     setLoading(false);
-
     if (error || !data.user) {
       triggerError("بيانات الدخول غير صحيحة");
       setPassword("");
       return;
     }
-
-    onLogin(data.user.email || trimUser);
+    sessionStorage.setItem("insurance_auth", data.user.id);
+    onLogin(data.user.id);
   }
-
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-
     const trimUser = username.trim();
     const trimPass = password.trim();
-
     if (!trimUser || !trimPass) {
       triggerError("يرجى ملء جميع الحقول");
       return;
     }
-
     if (trimPass.length < 6) {
       triggerError("كلمة المرور يجب أن تكون 6 أحرف على الأقل");
       return;
     }
-
     setLoading(true);
-
     const { data, error } = await supabase.auth.signUp({
       email: trimUser,
       password: trimPass,
     });
-
     setLoading(false);
-
     if (error) {
       triggerError(error.message);
       return;
     }
-
     if (!data.user) {
       triggerError("تعذر إنشاء الحساب");
       return;
     }
-
-    onLogin(data.user.email || trimUser);
+    sessionStorage.setItem("insurance_auth", data.user.id);
+    onLogin(data.user.id);
   }
-
   function switchMode(m: Mode) {
     setMode(m);
     setUsername("");
     setPassword("");
     setError("");
   }
-
   return (
     <div
       dir="rtl"
@@ -132,6 +110,20 @@ export default function Login({ onLogin }: LoginProps) {
     justifyContent: "center",
     
   }}
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
 >
   <img
   src="/logosigma.png"
@@ -148,7 +140,6 @@ export default function Login({ onLogin }: LoginProps) {
             {mode === "login" ? "سجّل دخولك للمتابعة" : "إنشاء حساب جديد"}
           </p>
         </div>
-
         <div style={{ display: "flex", background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 4, marginBottom: 24 }}>
           {(["login", "register"] as Mode[]).map((m) => (
             <button
@@ -173,7 +164,6 @@ export default function Login({ onLogin }: LoginProps) {
             </button>
           ))}
         </div>
-
         <form onSubmit={mode === "login" ? handleLogin : handleRegister}>
           <div style={{ marginBottom: 12 }}>
             <label style={{ display: "block", color: "rgba(255,255,255,0.85)", fontSize: "0.9em", fontWeight: "bold", marginBottom: 6 }}>
@@ -198,7 +188,6 @@ export default function Login({ onLogin }: LoginProps) {
               }}
             />
           </div>
-
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", color: "rgba(255,255,255,0.85)", fontSize: "0.9em", fontWeight: "bold", marginBottom: 6 }}>
               🔒 كلمة المرور
@@ -230,13 +219,11 @@ export default function Login({ onLogin }: LoginProps) {
               </button>
             </div>
           </div>
-
           {error && (
             <div style={{ background: "rgba(255,80,80,0.25)", border: "1px solid rgba(255,120,120,0.5)", borderRadius: 10, padding: "10px 14px", color: "white", textAlign: "center", marginBottom: 16, fontSize: "0.88em", fontWeight: "bold" }}>
               ❌ {error}
             </div>
           )}
-
           <button
             type="submit"
             disabled={loading}
@@ -265,8 +252,9 @@ export default function Login({ onLogin }: LoginProps) {
               : "✅ إنشاء الحساب"}
               
           </button>
-        
-<div
+
+          <div
+
             style={{
               marginTop: 18,
               paddingTop: 14,
@@ -298,14 +286,11 @@ export default function Login({ onLogin }: LoginProps) {
               </a>
             </span>
           </div>
-        
+
         </form>
 
       
       </div>
-
-
-
 
       <style>{`
         @keyframes shake {
