@@ -810,8 +810,9 @@ const uniquePolicies = Array.from(
   const displayedProfit = displayed.reduce((sum, p) => {
   return sum + (p.sell_price - p.buy_price);
 }, 0);
-  const unpaidCount = policies.filter((p) => !p.paid_company).length;
-  const paidCount = policies.filter((p) => p.paid_company).length;
+  const unpaidCount = uniquePolicies.filter((p) => !p.paid_company).length;
+
+const paidCount = uniquePolicies.filter((p) => p.paid_company).length;
   const isFiltered = paidFilter !== "all" || searchText.trim() !== "";
   const fieldStyle: React.CSSProperties = {
     width: "100%",
